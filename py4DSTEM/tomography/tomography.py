@@ -448,6 +448,24 @@ class Tomography:
                     )
                 )
 
+        from pdb import set_trace
+
+        set_trace()
+
+        if self._force_q_to_r_rotation_deg is not None:
+            for a0 in range(datacube.shape[0]):
+                for a1 in range(datacube.shape[1]):
+                    datacube.data[a0, a1] = np.clip(
+                        rotate(
+                            datacube.data[a0, a1],
+                            -self._force_q_to_r_rotation_deg,
+                            reshape=False,
+                            order=0,
+                        ),
+                        0,
+                        np.inf,
+                    )
+
         # resize diffraction space
         if diffraction_intensities_shape is not None:
             Q = datacube.shape[-1]
@@ -785,17 +803,17 @@ class Tomography:
             ind_diffraction_rotate_transpose = (
                 ind_diffraction_rotate_transpose.swapaxes(-1, -2)
             )
-        if self._force_q_to_r_rotation_deg is not None:
-            ind_diffraction_rotate_transpose = np.clip(
-                rotate(
-                    ind_diffraction_rotate_transpose,
-                    -self._force_q_to_r_rotation_deg,  # negative makes this rotation consistant with phase contrast module rotation
-                    reshape=False,
-                    order=0,
-                ),
-                0,
-                np.max(ind_diffraction),
-            )
+        # if self._force_q_to_r_rotation_deg is not None:
+        #     ind_diffraction_rotate_transpose = np.clip(
+        #         rotate(
+        #             ind_diffraction_rotate_transpose,
+        #             -self._force_q_to_r_rotation_deg,  # negative makes this rotation consistant with phase contrast module rotation
+        #             reshape=False,
+        #             order=0,
+        #         ),
+        #         0,
+        #         np.max(ind_diffraction),
+        #     )
 
         self._ind_diffraction = ind_diffraction
         self._ind_diffraction_ravel = ind_diffraction.ravel()
