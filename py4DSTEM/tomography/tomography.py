@@ -290,6 +290,7 @@ class Tomography:
         progress_bar: bool = True,
         zero_edges: bool = True,
         baseline_thresh: float = 0.9,
+        diffraction_gaussian_filter: float = 0,
     ):
         """
         Main loop for reconstruct
@@ -312,6 +313,8 @@ class Tomography:
             If True, zero edges along y and z
         baseline_thresh: float
             If not None, data is cropped below threshold. Value is percentile of object.
+        diffraction_gaussian_filter: float
+            Gaussian filter sigma for diffraction space (in pixels)
         """
         device = self._device
 
@@ -365,6 +368,7 @@ class Tomography:
             self._constraints(
                 zero_edges=zero_edges,
                 baseline_thresh=baseline_thresh,
+                diffraction_gaussian_filter=diffraction_gaussian_filter,
             )
 
             self.error_iterations.append(error_iteration)
@@ -447,10 +451,6 @@ class Tomography:
                         crop_reciprocal_space[3],
                     )
                 )
-
-        from pdb import set_trace
-
-        set_trace()
 
         if self._force_q_to_r_rotation_deg is not None:
             for a0 in range(datacube.shape[0]):
@@ -803,17 +803,6 @@ class Tomography:
             ind_diffraction_rotate_transpose = (
                 ind_diffraction_rotate_transpose.swapaxes(-1, -2)
             )
-        # if self._force_q_to_r_rotation_deg is not None:
-        #     ind_diffraction_rotate_transpose = np.clip(
-        #         rotate(
-        #             ind_diffraction_rotate_transpose,
-        #             -self._force_q_to_r_rotation_deg,  # negative makes this rotation consistant with phase contrast module rotation
-        #             reshape=False,
-        #             order=0,
-        #         ),
-        #         0,
-        #         np.max(ind_diffraction),
-        #     )
 
         self._ind_diffraction = ind_diffraction
         self._ind_diffraction_ravel = ind_diffraction.ravel()
@@ -1408,7 +1397,12 @@ class Tomography:
 
         self._object[x_index, yy, zz] += copy_to_device(update_r_summed, storage)
 
-    def _constraints(self, zero_edges: bool, baseline_thresh: float):
+    def _constraints(
+        self,
+        zero_edges: bool,
+        baseline_thresh: float,
+        diffraction_gaussian_filter: float,
+    ):
         """
         Constrains for object
         TODO: add constrains and break into multiple functions possibly
@@ -1419,6 +1413,8 @@ class Tomography:
             If True, zero edges along y and z
         baseline_thresh: float
             If not None, data is cropped below threshold.  Value is percentile of object.
+        diffraction_gaussian_filter: float
+            Gaussian filter sigma for diffraction space (in pixels)
         """
         if zero_edges:
             xp = self._xp_storage
@@ -1440,6 +1436,19 @@ class Tomography:
             )
             xp = self._xp_storage
             self._object = xp.clip(self._object - vmin, 0, np.inf)
+
+        if diffraction_gaussian_filter > 0:
+            if self._storage == "cpu":
+                from scipy.ndimage import gaussian_filter
+            else:
+                from cp.scipy.ndimage import gaussian_filter
+
+            s = self._object.shape
+
+            obj_6D = self.object_6D
+            obj_6D = gaussian_filter(obj_6D, diffraction_gaussian_filter, axes = (-1,-2,-3))
+
+            self._object = obj_6D.reshape(s)
 
     def set_storage(self, storage):
         """
