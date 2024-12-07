@@ -365,7 +365,6 @@ class Tomography:
                         self._object[x_index, yy, zz] += update_r_summed
 
                 elif distributed is True and self._device == "cpu":
-                    # obj = self._object
                     num_jobs = num_jobs or cpu_count() // threads_per_job
 
                     def f(args):
@@ -402,28 +401,6 @@ class Tomography:
 
                 else:
                     raise ValueError(("distributed not implemented for put"))
-
-                #     object_sliced = self._forward(
-                #         x_index=a2,
-                #         tilt_deg=self._tilt_deg[a1_shuffle],
-                #         num_points=num_points,
-                #     )
-
-                #     update, error = self._calculate_update(
-                #         object_sliced=object_sliced,
-                #         diffraction_patterns_projected=diffraction_patterns_projected,
-                #         x_index=a2,
-                #         datacube_number=a1_shuffle,
-                #     )
-
-                #     error_iteration += error
-
-                #     update *= step_size
-                #     self._back(
-                #         num_points=num_points,
-                #         x_index=a2,
-                #         update=update,
-                #     )
 
             self._constraints(
                 zero_edges=zero_edges,
