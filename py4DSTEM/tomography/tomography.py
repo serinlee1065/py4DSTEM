@@ -353,14 +353,14 @@ class Tomography:
 
                 if distributed is False:
                     for a2 in range(self._object_shape_6D[0]):
-                        x_index, yy, zz, update_r_summed = self._reconstruct(
+                        x_index, yy, zz, update_r_summed, error = self._reconstruct(
                             a2=a2,
                             a1_shuffle=a1_shuffle,
                             num_points=num_points,
                             diffraction_patterns_projected=diffraction_patterns_projected,
-                            error_iteration=error_iteration,
                             step_size=step_size,
                         )
+                        error_iteration += error
 
                         self._object[x_index, yy, zz] += update_r_summed
 
@@ -379,7 +379,6 @@ class Tomography:
                                 "a1_shuffle": a1_shuffle,
                                 "num_points": num_points,
                                 "diffraction_patterns_projected": diffraction_patterns_projected,
-                                "error_iteration": error_iteration,
                                 "step_size": step_size,
                             },
                         )
@@ -396,8 +395,9 @@ class Tomography:
                         )
 
                     for a2 in range(self._object_shape_6D[0]):
-                        x_index, yy, zz, update_r_summed = results[a2]
+                        x_index, yy, zz, update_r_summed, error = results[a2]
                         self._object[x_index, yy, zz] += update_r_summed
+                        error_iteration += error
 
                 else:
                     raise ValueError(("distributed not implemented for put"))
@@ -421,7 +421,6 @@ class Tomography:
         a1_shuffle,
         num_points,
         diffraction_patterns_projected,
-        error_iteration,
         step_size,
     ):
         object_sliced = self._forward(
@@ -437,7 +436,7 @@ class Tomography:
             datacube_number=a1_shuffle,
         )
 
-        error_iteration += error
+        error
 
         update *= step_size
         (x_index, yy, zz, update_r_summed) = self._back(
@@ -446,7 +445,7 @@ class Tomography:
             update=update,
         )
 
-        return x_index, yy, zz, update_r_summed
+        return x_index, yy, zz, update_r_summed, error
         # obj[x_index, yy, zz] += update_r_summed
 
     def _prepare_datacube(
