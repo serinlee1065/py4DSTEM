@@ -260,8 +260,19 @@ class Tomography:
 
             # align and reshape
             if force_centering_shifts is not None:
-                qx0_fit = force_centering_shifts[a0][0]
-                qy0_fit = force_centering_shifts[a0][1]
+                if np.isscalar(force_centering_shifts[a0][0]):
+                    qx0_fit = (
+                        np.ones((datacube.data.shape[0:2]))
+                        * force_centering_shifts[a0][0]
+                    )
+                    qy0_fit = (
+                        np.ones((datacube.data.shape[0:2]))
+                        * force_centering_shifts[a0][1]
+                    )
+                else:
+                    qx0_fit = force_centering_shifts[a0][0]
+                    qy0_fit = force_centering_shifts[a0][1]
+
             else:
                 (qx0_fit, qy0_fit) = self._solve_for_diffraction_pattern_centering(
                     datacube=datacube,
