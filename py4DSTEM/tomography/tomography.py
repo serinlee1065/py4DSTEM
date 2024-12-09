@@ -382,7 +382,6 @@ class Tomography:
                         with threadpool_limits(limits=threads_per_job):
                             return self._reconstruct(**args)
 
-                    # hopefully the data entries remain as views until dispatch time...
                     inputs = [
                         (
                             {
@@ -457,7 +456,6 @@ class Tomography:
         )
 
         return x_index, yy, zz, update_r_summed, error
-        # obj[x_index, yy, zz] += update_r_summed
 
     def _prepare_datacube(
         self,
@@ -1218,8 +1216,6 @@ class Tomography:
             )
         )
 
-        print('hello')
-
         ind_diff = xp.ravel_multi_index(
             (
                 ind1_diff.ravel(),
@@ -1229,8 +1225,6 @@ class Tomography:
             (s[-1], s[-1], s[-1]),
             "clip",
         )
-
-        self._qxx = xp.tile(qxx.ravel(), 4)
 
         bincount_x = (
             xp.tile(
