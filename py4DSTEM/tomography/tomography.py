@@ -1182,9 +1182,6 @@ class Tomography:
         line_z_diff = line_y_diff * xp.tan(tilt) + (s[-1] - 1) / 2
         line_y_diff += (s[-1] - 1) / 2
 
-        # line_y_diff = np.fft.fftfreq(s[-1], 1 / s[-1]) * xp.cos(tilt) + (s[-1]-1)/2
-        # line_z_diff = np.fft.fftfreq(s[-1], 1 / s[-1]) * xp.sin(tilt) + (s[-1]-1)/2
-
         yF_diff = xp.floor(line_y_diff).astype("int")
         zF_diff = xp.floor(line_z_diff).astype("int")
         dy_diff = line_y_diff - yF_diff
@@ -1214,22 +1211,26 @@ class Tomography:
 
         weights_diff = np.hstack(
             (
-                xp.repeat(((1 - dy_diff) * (1 - dz_diff)), s[-1]),
-                xp.repeat(((dy_diff) * (1 - dz_diff)), s[-1]),
-                xp.repeat(((1 - dy_diff) * (dz_diff)), s[-1]),
-                xp.repeat(((dy_diff) * (dz_diff)), s[-1]),
+                xp.tile(((1 - dy_diff) * (1 - dz_diff)), s[-1]),
+                xp.tile(((dy_diff) * (1 - dz_diff)), s[-1]),
+                xp.tile(((1 - dy_diff) * (dz_diff)), s[-1]),
+                xp.tile(((dy_diff) * (dz_diff)), s[-1]),
             )
         )
 
+        print('hello')
+
         ind_diff = xp.ravel_multi_index(
             (
+                ind1_diff.ravel(),
                 xp.tile(qxx.ravel(), 4),
                 ind0_diff.ravel(),
-                ind1_diff.ravel(),
             ),
             (s[-1], s[-1], s[-1]),
             "clip",
         )
+
+        self._qxx = xp.tile(qxx.ravel(), 4)
 
         bincount_x = (
             xp.tile(
@@ -1576,7 +1577,7 @@ class Tomography:
 
         Returns
         --------
-        self: PhaseReconstruction
+        self: TomoReconstruction
             Self to enable chaining
         """
 
