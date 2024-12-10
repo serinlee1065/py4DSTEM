@@ -1218,9 +1218,9 @@ class Tomography:
 
         ind_diff = xp.ravel_multi_index(
             (
-                ind1_diff.ravel(),
                 xp.tile(qxx.ravel(), 4),
                 ind0_diff.ravel(),
+                ind1_diff.ravel(),
             ),
             (s[-1], s[-1], s[-1]),
             "clip",
