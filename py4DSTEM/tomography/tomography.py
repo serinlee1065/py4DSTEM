@@ -544,6 +544,8 @@ class Tomography:
                         0,
                         np.inf,
                     )
+        if self._transpose_xy:
+            datacube.data = datacube.data.swapaxes(-1, -2)
 
         # resize diffraction space
         if diffraction_intensities_shape is not None:
