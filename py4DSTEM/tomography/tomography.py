@@ -123,6 +123,7 @@ class Tomography:
         resizing_method: str = "bin",
         bin_real_space: int = None,
         crop_reciprocal_space: float = None,
+        crop_real_space: float = None,
         q_max_inv_A: int = None,
         diffraction_space_mask_com=None,
         force_centering_shifts: Sequence[Tuple] = None,
@@ -136,7 +137,7 @@ class Tomography:
         robust_thresh: int = 2,
         force_q_to_r_rotation_deg=None,
         force_q_to_r_transpose=False,
-        dp_shift_method="subpixel",
+        dp_shift_method="pixel",
     ):
         """
         Preprocessing for nanobeam tomography
@@ -151,6 +152,9 @@ class Tomography:
             factor for binnning in real space
         crop_reciprocal_space: float
             if not None, crops reciprocal space on all sides by integer.
+            Can pass an single integer of a 4-tuple
+        crop_real_space: float
+            if not None, crops real space on all sides by integer.
             Can pass an single integer of a 4-tuple
         q_max_inv_A: int
             maximum q in inverse angstroms
@@ -216,6 +220,7 @@ class Tomography:
                     bin_real_space=bin_real_space,
                     masks_real_space=masks_real_space,
                     crop_reciprocal_space=crop_reciprocal_space,
+                    crop_real_space=crop_real_space,
                     q_max_inv_A=q_max_inv_A,
                 )
             )
@@ -303,7 +308,7 @@ class Tomography:
         store_iterations: bool = False,
         reset: bool = True,
         step_size: float = 0.5,
-        num_points: int = 60,
+        num_points: int = None,
         progress_bar: bool = True,
         zero_edges: bool = True,
         baseline_thresh: float = 0.9,
@@ -345,6 +350,9 @@ class Tomography:
                 self.object_iterations = []
 
             self._object = self._object_initial.copy()
+
+        if num_points is None: 
+            num_points = tomo._object_shape_6D[2]
 
         for a0 in tqdmnd(
             num_iter,
@@ -446,8 +454,6 @@ class Tomography:
             datacube_number=a1_shuffle,
         )
 
-        error
-
         update *= step_size
         (x_index, yy, zz, update_r_summed) = self._back(
             num_points=num_points,
@@ -466,6 +472,7 @@ class Tomography:
         bin_real_space,
         masks_real_space,
         crop_reciprocal_space,
+        crop_real_space,
         q_max_inv_A,
     ):
         """
@@ -483,6 +490,9 @@ class Tomography:
             mask for real space. can be the same for each datacube of individually specified.
         crop_reciprocal_space: float
             if not None, crops reciprocal space on all sides by integer.
+            Can pass an single integer of a 4-tuple
+        crop_real_space: float
+            if not None, crops real space on all sides by integer.
             Can pass an single integer of a 4-tuple
         q_max_inv_A: int
             maximum q in inverse angtroms
@@ -502,6 +512,26 @@ class Tomography:
         else:
             datacube = self._datacubes[datacube_number]
 
+        if crop_real_space:
+            if np.isscalar(crop_real_space):
+                datacube.crop_R(
+                    (
+                        crop_real_space,
+                        -crop_real_space,
+                        crop_real_space,
+                        -crop_real_space,
+                    )
+                )
+            else:
+                datacube.crop_R(
+                    (
+                        crop_real_space[0],
+                        crop_real_space[1],
+                        crop_real_space[2],
+                        crop_real_space[3],
+                    )
+                )
+        
         if masks_real_space is not None:
             if type(masks_real_space) is np.ndarray:
                 mask_real_space = masks_real_space
@@ -1431,6 +1461,7 @@ class Tomography:
         )
         diff_index = self._ind_diff[ind_update]
 
+
         diff_bincount = xp.bincount(diff_index)
         diff_max = diff_bincount.shape[0]
 
@@ -1450,21 +1481,26 @@ class Tomography:
 
         diff_shape_bin = update_q_summed.shape[-1]
 
-        real_bincount = xp.bincount(real_index)
-        real_max = real_bincount.shape[0]
+        real_index_bincount = xp.bincount(real_index)
+        real_max = real_index_bincount.shape[0]
+        # normalization_factor = np.ones(real_index_bincount.shape)
+        # normalization_factor[real_index_bincount>4] = 4/real_index_bincount[real_index_bincount>4]
+    
 
         bincount_real = (
             xp.tile(xp.arange(diff_shape_bin), real_shape)
             + xp.repeat(real_index, diff_shape_bin) * diff_shape_bin
         )
 
-        update_r_summed = (
+        update_r_summed = ((
             xp.bincount(
                 bincount_real,
                 (update_q_summed * self._weights_real.ravel()[:, None]).ravel(),
                 minlength=((real_max) * diff_shape_bin),
             )
-        ).reshape((-1, diff_shape_bin))[real_bincount > 0]
+        ).reshape((-1, diff_shape_bin))[real_index_bincount > 0]
+
+        
 
         yy, zz = xp.meshgrid(
             xp.unique(real_index), xp.unique(diff_index), indexing="ij"
