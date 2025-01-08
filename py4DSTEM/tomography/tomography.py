@@ -1492,7 +1492,7 @@ class Tomography:
             + xp.repeat(real_index, diff_shape_bin) * diff_shape_bin
         )
 
-        update_r_summed = ((
+        update_r_summed = (
             xp.bincount(
                 bincount_real,
                 (update_q_summed * self._weights_real.ravel()[:, None]).ravel(),
