@@ -351,7 +351,7 @@ class Tomography:
 
             self._object = self._object_initial.copy()
 
-        if num_points is None: 
+        if num_points is None:
             num_points = tomo._object_shape_6D[2]
 
         for a0 in tqdmnd(
@@ -531,7 +531,7 @@ class Tomography:
                         crop_real_space[3],
                     )
                 )
-        
+
         if masks_real_space is not None:
             if type(masks_real_space) is np.ndarray:
                 mask_real_space = masks_real_space
@@ -1268,6 +1268,20 @@ class Tomography:
 
         ind_real = xp.ravel_multi_index((ind0, ind1), (s[1], s[2]), mode="clip")
 
+        ind_real_bincount_weight = np.bincount(
+            ind_real.ravel(), weights_real.ravel(), minlength=ind_real.max()
+        )
+        ind_real_bincount = np.bincount(ind_real.ravel(), minlength=ind_real.max())
+        ind_real_bincount_weight = ind_real_bincount_weight[ind_real_bincount > 0]
+        ind_real_bincount = ind_real_bincount[ind_real_bincount > 0]
+        ind_real_bincount_weight[ind_real_bincount_weight == 0] = 1
+        correction_factor = 1 / ind_real_bincount_weight
+        correction_factor = np.repeat(correction_factor, ind_real_bincount)
+
+        sorted_indicies = np.argsort(np.argsort(ind_real.ravel()))
+        correction_factor = correction_factor[sorted_indicies].reshape(ind_real.shape)
+        weights_real = weights_real * correction_factor
+
         obj_projected = (
             (
                 xp.bincount(
@@ -1283,8 +1297,9 @@ class Tomography:
             * 4
         )
 
-        self._ind0 = ind0
-        self._ind1 = ind1
+        # self._ind0 = ind0
+        # self._ind1 = ind1
+        self._ind_real = ind_real
         self._weights_real = weights_real
         self._ind_diff = ind_diff
         self._ind0_diff = ind0_diff
@@ -1456,16 +1471,14 @@ class Tomography:
                 axis=0,
             ) / (num_points)
 
-        real_index = xp.ravel_multi_index(
-            (self._ind0.ravel(), self._ind1.ravel()), (s[1], s[2]), mode="clip"
-        )
-        diff_index = self._ind_diff[ind_update]
+        ind_real = self._ind_real.ravel()
 
+        diff_index = self._ind_diff[ind_update]
 
         diff_bincount = xp.bincount(diff_index)
         diff_max = diff_bincount.shape[0]
 
-        real_shape = real_index.shape[0]
+        real_shape = ind_real.shape[0]
         diff_shape = diff_index.shape[0]
 
         bincount_diff = (
@@ -1481,15 +1494,14 @@ class Tomography:
 
         diff_shape_bin = update_q_summed.shape[-1]
 
-        real_index_bincount = xp.bincount(real_index)
-        real_max = real_index_bincount.shape[0]
-        # normalization_factor = np.ones(real_index_bincount.shape)
-        # normalization_factor[real_index_bincount>4] = 4/real_index_bincount[real_index_bincount>4]
-    
+        ind_real_bincount = xp.bincount(ind_real)
+        real_max = ind_real_bincount.shape[0]
+        # normalization_factor = np.ones(ind_real_bincount.shape)
+        # normalization_factor[ind_real_bincount>4] = 4/ind_real_bincount[ind_real_bincount>4]
 
         bincount_real = (
             xp.tile(xp.arange(diff_shape_bin), real_shape)
-            + xp.repeat(real_index, diff_shape_bin) * diff_shape_bin
+            + xp.repeat(ind_real, diff_shape_bin) * diff_shape_bin
         )
 
         update_r_summed = (
@@ -1498,13 +1510,9 @@ class Tomography:
                 (update_q_summed * self._weights_real.ravel()[:, None]).ravel(),
                 minlength=((real_max) * diff_shape_bin),
             )
-        ).reshape((-1, diff_shape_bin))[real_index_bincount > 0]
+        ).reshape((-1, diff_shape_bin))[ind_real_bincount > 0]
 
-        
-
-        yy, zz = xp.meshgrid(
-            xp.unique(real_index), xp.unique(diff_index), indexing="ij"
-        )
+        yy, zz = xp.meshgrid(xp.unique(ind_real), xp.unique(diff_index), indexing="ij")
 
         yy = copy_to_device(yy, storage)
         zz = copy_to_device(zz, storage)
