@@ -1206,6 +1206,8 @@ class Tomography:
             )
         )
 
+        ind_real = xp.ravel_multi_index((ind0, ind1), (s[1], s[2]), mode="clip")
+
         # solve for diffraction space coordinates
         length = s[-1] * np.cos(tilt)
         line_y_diff = xp.arange(-(s[-1] - 1) / 2, s[-1] / 2) * length / s[-1]
@@ -1258,16 +1260,7 @@ class Tomography:
             "clip",
         )
 
-        bincount_x = (
-            xp.tile(
-                (xp.tile(self._ind_diffraction_ravel, 4)),
-                (s[1]),
-            )
-            + xp.repeat(xp.arange(s[1]), ind_diff.shape[0]) * self._q_length
-        )
-
-        ind_real = xp.ravel_multi_index((ind0, ind1), (s[1], s[2]), mode="clip")
-
+        # normalization real space
         ind_real_bincount_weight = np.bincount(
             ind_real.ravel(), weights_real.ravel(), minlength=ind_real.max()
         )
@@ -1277,10 +1270,20 @@ class Tomography:
         ind_real_bincount_weight[ind_real_bincount_weight == 0] = 1
         correction_factor = 1 / ind_real_bincount_weight
         correction_factor = np.repeat(correction_factor, ind_real_bincount)
-
         sorted_indicies = np.argsort(np.argsort(ind_real.ravel()))
         correction_factor = correction_factor[sorted_indicies].reshape(ind_real.shape)
         weights_real = weights_real * correction_factor
+
+        # normalization reciprocal space
+
+        # project
+        bincount_x = (
+            xp.tile(
+                (xp.tile(self._ind_diffraction_ravel, 4)),
+                (s[1]),
+            )
+            + xp.repeat(xp.arange(s[1]), ind_diff.shape[0]) * self._q_length
+        )
 
         obj_projected = (
             (
