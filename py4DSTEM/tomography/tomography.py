@@ -138,6 +138,7 @@ class Tomography:
         force_q_to_r_rotation_deg=None,
         force_q_to_r_transpose=False,
         dp_shift_method="pixel",
+        num_points: int = None,
     ):
         """
         Preprocessing for nanobeam tomography
@@ -191,6 +192,8 @@ class Tomography:
             of the predicted values after fitting.
         dp_shift_method: float
             method to shift diffraction patterns "subpixel" or "pixel"
+        num_points: int
+            number of points for bilinear interpolation in real space
         """
         xp_storage = self._xp_storage
         storage = self._storage
@@ -207,6 +210,10 @@ class Tomography:
         self._force_q_to_r_rotation_deg = force_q_to_r_rotation_deg
 
         self._datacube_R_pixel_size_A = self._datacube_R_pixel_size_A_init
+
+        if num_points is None:
+            num_points = self._object_shape_x_y_z[2]
+        self._num_points = num_points
 
         # preprocessing of diffraction data
         for a0 in range(self._num_datacubes):
@@ -300,6 +307,11 @@ class Tomography:
                 dp_shift_method=dp_shift_method,
             )
 
+            self._solve_for_indicies(
+                datacube_number=a0,
+                num_points=num_points,
+            )
+
         return self
 
     def reconstruct(
@@ -308,7 +320,6 @@ class Tomography:
         store_iterations: bool = False,
         reset: bool = True,
         step_size: float = 0.5,
-        num_points: int = None,
         progress_bar: bool = True,
         zero_edges: bool = True,
         baseline_thresh: float = 0.9,
@@ -330,8 +341,6 @@ class Tomography:
             if True, resets object
         step_size: float
             from 0 to 1, step size for update
-        num_points: int
-            number of points for bilinear interpolation in real space
         progres_bar: bool
             if True, shows progress bar
         zero_edges: bool
@@ -351,9 +360,6 @@ class Tomography:
 
             self._object = self._object_initial.copy()
 
-        if num_points is None:
-            num_points = tomo._object_shape_6D[2]
-
         for a0 in tqdmnd(
             num_iter,
             desc="Reconstructing object",
@@ -363,6 +369,8 @@ class Tomography:
             error_iteration = 0
             random_tilt_order = np.arange(self._num_datacubes)
             np.random.shuffle(random_tilt_order)
+
+            num_points = self._num_points
 
             for a1 in range(self._num_datacubes):
                 a1_shuffle = random_tilt_order[a1]
@@ -442,21 +450,22 @@ class Tomography:
         step_size,
     ):
         object_sliced = self._forward(
+            datacube_number=a1_shuffle,
             x_index=a2,
-            tilt_deg=self._tilt_deg[a1_shuffle],
             num_points=num_points,
         )
 
         update, error = self._calculate_update(
             object_sliced=object_sliced,
             diffraction_patterns_projected=diffraction_patterns_projected,
-            x_index=a2,
             datacube_number=a1_shuffle,
+            x_index=a2,
         )
 
         update *= step_size
         (x_index, yy, zz, update_r_summed) = self._back(
             num_points=num_points,
+            datacube_number=a1_shuffle,
             x_index=a2,
             update=update,
         )
@@ -942,6 +951,152 @@ class Tomography:
             dtype="bool",
         )
 
+    def _solve_for_indicies(
+        self,
+        datacube_number,
+        num_points,
+    ):
+        """ """
+        xp = self._xp
+        s = self._object_shape_6D
+        device = self._device
+
+        tilt_deg = self._tilt_deg[datacube_number]
+        tilt = -xp.deg2rad(tilt_deg)
+
+        # solve for real space coordinates
+        line_z = xp.linspace(0, 1, num_points) * (s[2] - 1)
+        line_y = line_z * xp.tan(tilt)
+        line_y -= np.mean(line_y)
+        offset = xp.arange(s[1], dtype="int")
+
+        yF = xp.floor(line_y).astype("int")
+        zF = xp.floor(line_z).astype("int")
+        dy = line_y - yF
+        dz = line_z - zF
+
+        ind0 = np.hstack(
+            (
+                xp.tile(yF, (s[1], 1)) + offset[:, None],
+                xp.tile(yF + 1, (s[1], 1)) + offset[:, None],
+                xp.tile(yF, (s[1], 1)) + offset[:, None],
+                xp.tile(yF + 1, (s[1], 1)) + offset[:, None],
+            )
+        )
+
+        ind1 = np.hstack(
+            (
+                xp.tile(zF, (s[1], 1)),
+                xp.tile(zF, (s[1], 1)),
+                xp.tile(zF + 1, (s[1], 1)),
+                xp.tile(zF + 1, (s[1], 1)),
+            )
+        )
+
+        weights_real = np.hstack(
+            (
+                xp.tile(((1 - dy) * (1 - dz)), (s[1], 1)),
+                xp.tile(((dy) * (1 - dz)), (s[1], 1)),
+                xp.tile(((1 - dy) * (dz)), (s[1], 1)),
+                xp.tile(((dy) * (dz)), (s[1], 1)),
+            )
+        )
+
+        ind_real = xp.ravel_multi_index((ind0, ind1), (s[1], s[2]), mode="clip")
+
+        # solve for diffraction space coordinates
+        length = s[-1] * np.cos(tilt)
+        line_y_diff = xp.arange(-(s[-1] - 1) / 2, s[-1] / 2) * length / s[-1]
+        line_z_diff = line_y_diff * xp.tan(tilt) + (s[-1] - 1) / 2
+        line_y_diff += (s[-1] - 1) / 2
+
+        yF_diff = xp.floor(line_y_diff).astype("int")
+        zF_diff = xp.floor(line_z_diff).astype("int")
+        dy_diff = line_y_diff - yF_diff
+        dz_diff = line_z_diff - zF_diff
+
+        qx = xp.arange(s[-1])
+        qy = xp.arange(s[-1])
+        qxx, qyy = xp.meshgrid(qx, qy, indexing="ij")
+
+        ind0_diff = np.hstack(
+            (
+                xp.tile(yF_diff, s[-1]),
+                xp.tile(yF_diff + 1, s[-1]),
+                xp.tile(yF_diff, s[-1]),
+                xp.tile(yF_diff + 1, s[-1]),
+            )
+        )
+
+        ind1_diff = np.hstack(
+            (
+                xp.tile(zF_diff, s[-1]),
+                xp.tile(zF_diff, s[-1]),
+                xp.tile(zF_diff + 1, s[-1]),
+                xp.tile(zF_diff + 1, s[-1]),
+            )
+        )
+
+        weights_diff = np.hstack(
+            (
+                xp.tile(((1 - dy_diff) * (1 - dz_diff)), s[-1]),
+                xp.tile(((dy_diff) * (1 - dz_diff)), s[-1]),
+                xp.tile(((1 - dy_diff) * (dz_diff)), s[-1]),
+                xp.tile(((dy_diff) * (dz_diff)), s[-1]),
+            )
+        )
+
+        ind_diff = xp.ravel_multi_index(
+            (
+                xp.tile(qxx.ravel(), 4),
+                ind0_diff.ravel(),
+                ind1_diff.ravel(),
+            ),
+            (s[-1], s[-1], s[-1]),
+            "clip",
+        )
+
+        # normalization real space
+        ind_real_bincount_weight = xp.bincount(
+            ind_real.ravel(), weights_real.ravel(), minlength=ind_real.max()
+        )
+        ind_real_bincount = xp.bincount(ind_real.ravel(), minlength=ind_real.max())
+        ind_real_bincount_weight = ind_real_bincount_weight[ind_real_bincount > 0]
+        ind_real_bincount = ind_real_bincount[ind_real_bincount > 0]
+        ind_real_bincount_weight[ind_real_bincount_weight == 0] = 1
+        correction_factor_real = 1 / ind_real_bincount_weight
+        correction_factor_real = xp.repeat(correction_factor_real, ind_real_bincount)
+        sorted_indicies = xp.argsort(xp.argsort(ind_real.ravel()))
+        correction_factor_real = correction_factor_real[sorted_indicies].reshape(
+            ind_real.shape
+        )
+        weights_real = weights_real * correction_factor_real
+
+        # normalization reciprocal space
+        # ind_diff_bincount_weight = xp.bincount(
+        #     ind_diff.ravel(), weights_diff.ravel(), minlength=ind_diff.max()
+        # )
+        # ind_diff_bincount = xp.bincount(ind_diff.ravel(), minlength=ind_diff.max())
+        # ind_diff_bincount_weight = ind_diff_bincount_weight[ind_diff_bincount > 0]
+        # ind_diff_bincount = ind_diff_bincount[ind_diff_bincount > 0]
+        # ind_diff_bincount_weight[ind_diff_bincount_weight < 1 ] = 1
+        # correction_factor_diff = 1 / ind_diff_bincount_weight
+        # correction_factor_diff = xp.repeat(correction_factor_diff, ind_diff_bincount)
+        # sorted_indicies = xp.argsort(xp.argsort(ind_diff.ravel()))
+        # correction_factor_diff = correction_factor_diff[sorted_indicies].reshape(ind_diff.shape)
+        # weights_diff = weights_diff * correction_factor_diff
+
+        if datacube_number == 0:
+            self._ind_real = []
+            self._weights_real = []
+            self._ind_diff = []
+            self._weights_diff = []
+
+        self._ind_real.append(ind_real)
+        self._ind_diff.append(ind_diff)
+        self._weights_real.append(weights_real)
+        self._weights_diff.append(weights_diff)
+
     def _reshape_4D_array_to_2D(
         self,
         data,
@@ -1138,8 +1293,8 @@ class Tomography:
 
     def _forward(
         self,
+        datacube_number: float,
         x_index: int,
-        tilt_deg: float,
         num_points: int,
     ):
         """
@@ -1147,10 +1302,10 @@ class Tomography:
 
         Parameters
         ----------
+        datacube_number: float
+            index of datacube
         x_index: int
             x slice for forward projection
-        tilt_deg: float
-            tilt of object in degrees
         num_points: int
             number of points for bilinear interpolation
 
@@ -1166,128 +1321,10 @@ class Tomography:
         device = self._device
         obj = copy_to_device(self._object[x_index], device)
 
-        tilt = -xp.deg2rad(tilt_deg)
-
-        # solve for real space coordinates
-        line_z = xp.linspace(0, 1, num_points) * (s[2] - 1)
-        line_y = line_z * xp.tan(tilt)
-        line_y -= np.mean(line_y)
-        offset = xp.arange(s[1], dtype="int")
-
-        yF = xp.floor(line_y).astype("int")
-        zF = xp.floor(line_z).astype("int")
-        dy = line_y - yF
-        dz = line_z - zF
-
-        ind0 = np.hstack(
-            (
-                xp.tile(yF, (s[1], 1)) + offset[:, None],
-                xp.tile(yF + 1, (s[1], 1)) + offset[:, None],
-                xp.tile(yF, (s[1], 1)) + offset[:, None],
-                xp.tile(yF + 1, (s[1], 1)) + offset[:, None],
-            )
-        )
-
-        ind1 = np.hstack(
-            (
-                xp.tile(zF, (s[1], 1)),
-                xp.tile(zF, (s[1], 1)),
-                xp.tile(zF + 1, (s[1], 1)),
-                xp.tile(zF + 1, (s[1], 1)),
-            )
-        )
-
-        weights_real = np.hstack(
-            (
-                xp.tile(((1 - dy) * (1 - dz)), (s[1], 1)),
-                xp.tile(((dy) * (1 - dz)), (s[1], 1)),
-                xp.tile(((1 - dy) * (dz)), (s[1], 1)),
-                xp.tile(((dy) * (dz)), (s[1], 1)),
-            )
-        )
-
-        ind_real = xp.ravel_multi_index((ind0, ind1), (s[1], s[2]), mode="clip")
-
-        # solve for diffraction space coordinates
-        length = s[-1] * np.cos(tilt)
-        line_y_diff = xp.arange(-(s[-1] - 1) / 2, s[-1] / 2) * length / s[-1]
-        line_z_diff = line_y_diff * xp.tan(tilt) + (s[-1] - 1) / 2
-        line_y_diff += (s[-1] - 1) / 2
-
-        yF_diff = xp.floor(line_y_diff).astype("int")
-        zF_diff = xp.floor(line_z_diff).astype("int")
-        dy_diff = line_y_diff - yF_diff
-        dz_diff = line_z_diff - zF_diff
-
-        qx = xp.arange(s[-1])
-        qy = xp.arange(s[-1])
-        qxx, qyy = xp.meshgrid(qx, qy, indexing="ij")
-
-        ind0_diff = np.hstack(
-            (
-                xp.tile(yF_diff, s[-1]),
-                xp.tile(yF_diff + 1, s[-1]),
-                xp.tile(yF_diff, s[-1]),
-                xp.tile(yF_diff + 1, s[-1]),
-            )
-        )
-
-        ind1_diff = np.hstack(
-            (
-                xp.tile(zF_diff, s[-1]),
-                xp.tile(zF_diff, s[-1]),
-                xp.tile(zF_diff + 1, s[-1]),
-                xp.tile(zF_diff + 1, s[-1]),
-            )
-        )
-
-        weights_diff = np.hstack(
-            (
-                xp.tile(((1 - dy_diff) * (1 - dz_diff)), s[-1]),
-                xp.tile(((dy_diff) * (1 - dz_diff)), s[-1]),
-                xp.tile(((1 - dy_diff) * (dz_diff)), s[-1]),
-                xp.tile(((dy_diff) * (dz_diff)), s[-1]),
-            )
-        )
-
-        ind_diff = xp.ravel_multi_index(
-            (
-                xp.tile(qxx.ravel(), 4),
-                ind0_diff.ravel(),
-                ind1_diff.ravel(),
-            ),
-            (s[-1], s[-1], s[-1]),
-            "clip",
-        )
-
-        # normalization real space
-        ind_real_bincount_weight = xp.bincount(
-            ind_real.ravel(), weights_real.ravel(), minlength=ind_real.max()
-        )
-        ind_real_bincount = xp.bincount(ind_real.ravel(), minlength=ind_real.max())
-        ind_real_bincount_weight = ind_real_bincount_weight[ind_real_bincount > 0]
-        ind_real_bincount = ind_real_bincount[ind_real_bincount > 0]
-        ind_real_bincount_weight[ind_real_bincount_weight == 0] = 1
-        correction_factor_real = 1 / ind_real_bincount_weight
-        correction_factor_real = xp.repeat(correction_factor_real, ind_real_bincount)
-        sorted_indicies = xp.argsort(xp.argsort(ind_real.ravel()))
-        correction_factor_real = correction_factor_real[sorted_indicies].reshape(ind_real.shape)
-        weights_real = weights_real * correction_factor_real
-
-        # normalization reciprocal space
-        # ind_diff_bincount_weight = xp.bincount(
-        #     ind_diff.ravel(), weights_diff.ravel(), minlength=ind_diff.max()
-        # )
-        # ind_diff_bincount = xp.bincount(ind_diff.ravel(), minlength=ind_diff.max())
-        # ind_diff_bincount_weight = ind_diff_bincount_weight[ind_diff_bincount > 0]
-        # ind_diff_bincount = ind_diff_bincount[ind_diff_bincount > 0]
-        # ind_diff_bincount_weight[ind_diff_bincount_weight < 1 ] = 1
-        # correction_factor_diff = 1 / ind_diff_bincount_weight
-        # correction_factor_diff = xp.repeat(correction_factor_diff, ind_diff_bincount)
-        # sorted_indicies = xp.argsort(xp.argsort(ind_diff.ravel()))
-        # correction_factor_diff = correction_factor_diff[sorted_indicies].reshape(ind_diff.shape)
-        # weights_diff = weights_diff * correction_factor_diff
-
+        ind_real = self._ind_real[datacube_number]
+        ind_diff = self._ind_diff[datacube_number]
+        weights_real = self._weights_real[datacube_number]
+        weights_diff = self._weights_diff[datacube_number]
 
         # project
         bincount_x = (
@@ -1313,19 +1350,14 @@ class Tomography:
             * 4
         )
 
-        # self._ind0 = ind0
-        # self._ind1 = ind1
-        self._ind_real = ind_real
-        self._weights_real = weights_real
-        self._ind_diff = ind_diff
-        self._ind0_diff = ind0_diff
-        self._ind1_diff = ind1_diff
-        self._weights_diff = weights_diff
-
         return obj_projected
 
     def _calculate_update(
-        self, object_sliced, diffraction_patterns_projected, x_index, datacube_number
+        self,
+        object_sliced,
+        diffraction_patterns_projected,
+        datacube_number,
+        x_index,
     ):
         """
         Calculate update for back projection
@@ -1336,10 +1368,11 @@ class Tomography:
             projection of current object sliced in diffraciton space
         diffraction_patterns_projected: np.ndarray
             projected diffraction patterns for the relevant tilt
-        x_index: int
-            x slice of object to be sliced
         datacube_number: int
             index of datacube
+        x_index: int
+            x slice of object to be sliced
+
 
         Returns
         --------
@@ -1433,6 +1466,7 @@ class Tomography:
     def _back(
         self,
         num_points: int,
+        datacube_number: int,
         x_index: int,
         update,
     ):
@@ -1443,6 +1477,8 @@ class Tomography:
         ----------
         num_points: int
             number of points for bilinear interpolation
+        datacube_number: int
+            index of datacube
         x_index: int
             x slice for back projection
         update: np.ndarray
@@ -1470,7 +1506,7 @@ class Tomography:
                     (xp.tile(xp.repeat(update, 2, axis=1)[:, 1:] / normalize, (4)))[
                         :, i
                     ]
-                    * (self._weights_diff[ind_update])
+                    * (self._weights_diff[datacube_number][ind_update])
                 ),
                 4 * num_points,
                 axis=0,
@@ -1481,15 +1517,15 @@ class Tomography:
             update_reshaped = xp.repeat(
                 (
                     (xp.tile(xp.repeat(update, 2, axis=1) / normalize, (4)))[:, i]
-                    * (self._weights_diff[ind_update])
+                    * (self._weights_diff[datacube_number][ind_update])
                 ),
                 4 * num_points,
                 axis=0,
             ) / (num_points)
 
-        ind_real = self._ind_real.ravel()
+        ind_real = self._ind_real[datacube_number].ravel()
 
-        diff_index = self._ind_diff[ind_update]
+        diff_index = self._ind_diff[datacube_number][ind_update]
 
         diff_bincount = xp.bincount(diff_index)
         diff_max = diff_bincount.shape[0]
@@ -1523,7 +1559,10 @@ class Tomography:
         update_r_summed = (
             xp.bincount(
                 bincount_real,
-                (update_q_summed * self._weights_real.ravel()[:, None]).ravel(),
+                (
+                    update_q_summed
+                    * self._weights_real[datacube_number].ravel()[:, None]
+                ).ravel(),
                 minlength=((real_max) * diff_shape_bin),
             )
         ).reshape((-1, diff_shape_bin))[ind_real_bincount > 0]
