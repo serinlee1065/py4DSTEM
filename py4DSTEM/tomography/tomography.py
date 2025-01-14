@@ -1056,6 +1056,53 @@ class Tomography:
             "clip",
         )
 
+        # solve for diffraction normalization
+        line_y_diff_norm = xp.arange(-(s[-1] - 1) / 2, s[-1] / 2)
+        line_z_diff_norm = line_y_diff_norm * xp.tan(tilt) + (s[-1] - 1) / 2
+        line_y_diff_norm += (s[-1] - 1) / 2
+
+        yF_diff_norm = xp.floor(line_y_diff_norm).astype("int")
+        zF_diff_norm = xp.floor(line_z_diff_norm).astype("int")
+        dy_diff_norm = line_y_diff_norm - yF_diff_norm
+        dz_diff_norm = line_z_diff_norm - zF_diff_norm
+
+        ind0_diff_norm = np.hstack(
+            (
+                xp.tile(yF_diff_norm, s[-1]),
+                xp.tile(yF_diff_norm + 1, s[-1]),
+                xp.tile(yF_diff_norm, s[-1]),
+                xp.tile(yF_diff_norm + 1, s[-1]),
+            )
+        )
+
+        ind1_diff_norm = np.hstack(
+            (
+                xp.tile(zF_diff_norm, s[-1]),
+                xp.tile(zF_diff_norm, s[-1]),
+                xp.tile(zF_diff_norm + 1, s[-1]),
+                xp.tile(zF_diff_norm + 1, s[-1]),
+            )
+        )
+
+        weights_diff_norm = np.hstack(
+            (
+                xp.tile(((1 - dy_diff) * (1 - dz_diff_norm)), s[-1]),
+                xp.tile(((dy_diff) * (1 - dz_diff_norm)), s[-1]),
+                xp.tile(((1 - dy_diff) * (dz_diff_norm)), s[-1]),
+                xp.tile(((dy_diff) * (dz_diff_norm)), s[-1]),
+            )
+        )
+
+        ind_diff_norm = xp.ravel_multi_index(
+            (
+                xp.tile(qxx.ravel(), 4),
+                ind0_diff_norm.ravel(),
+                ind1_diff_norm.ravel(),
+            ),
+            (s[-1], s[-1], s[-1]),
+            "clip",
+        )
+
         # normalization real space
         ind_real_bincount_weight = xp.bincount(
             ind_real.ravel(), weights_real.ravel(), minlength=ind_real.max()
@@ -1073,29 +1120,62 @@ class Tomography:
         weights_real = weights_real * correction_factor_real
 
         # normalization reciprocal space
-        # ind_diff_bincount_weight = xp.bincount(
-        #     ind_diff.ravel(), weights_diff.ravel(), minlength=ind_diff.max()
-        # )
-        # ind_diff_bincount = xp.bincount(ind_diff.ravel(), minlength=ind_diff.max())
-        # ind_diff_bincount_weight = ind_diff_bincount_weight[ind_diff_bincount > 0]
-        # ind_diff_bincount = ind_diff_bincount[ind_diff_bincount > 0]
-        # ind_diff_bincount_weight[ind_diff_bincount_weight < 1 ] = 1
-        # correction_factor_diff = 1 / ind_diff_bincount_weight
-        # correction_factor_diff = xp.repeat(correction_factor_diff, ind_diff_bincount)
-        # sorted_indicies = xp.argsort(xp.argsort(ind_diff.ravel()))
-        # correction_factor_diff = correction_factor_diff[sorted_indicies].reshape(ind_diff.shape)
-        # weights_diff = weights_diff * correction_factor_diff
+        bincount_max = np.max((ind_diff.max(), ind_diff_norm.max())) + 1
+
+        ind_diff_bincount_weight = xp.bincount(
+            ind_diff.ravel(), weights_diff.ravel(), minlength=bincount_max
+        )
+        ind_diff_bincount = xp.bincount(ind_diff.ravel(), minlength=bincount_max)
+
+        ind_diff_bincount_weight_norm = xp.bincount(
+            ind_diff_norm.ravel(), weights_diff_norm.ravel(), minlength=bincount_max
+        )
+        ind_diff_bincount_norm = xp.bincount(
+            ind_diff_norm.ravel(), minlength=bincount_max
+        )
+
+        ind_diff_bincount_weight_norm = ind_diff_bincount_weight_norm[
+            ind_diff_bincount > 0
+        ]
+        ind_diff_bincount_norm = ind_diff_bincount_norm[ind_diff_bincount > 0]
+        ind_diff_bincount_weight = ind_diff_bincount_weight[ind_diff_bincount > 0]
+        ind_diff_bincount = ind_diff_bincount[ind_diff_bincount > 0]
+
+        ind_diff_bincount_weight[ind_diff_bincount_weight == 0] = 1
+
+        correction_factor_diff = (
+            ind_diff_bincount_weight_norm / ind_diff_bincount_weight
+        )
+
+        correction_factor_diff = xp.repeat(correction_factor_diff, ind_diff_bincount)
+        sorted_indicies = xp.argsort(xp.argsort(ind_diff.ravel()))
+        correction_factor_diff = correction_factor_diff[sorted_indicies].reshape(
+            ind_diff.shape
+        )
+        weights_diff = weights_diff * correction_factor_diff
 
         if datacube_number == 0:
             self._ind_real = []
             self._weights_real = []
             self._ind_diff = []
             self._weights_diff = []
+            self._ind0_diff = []
+            self._ind1_diff = []
+            self._ind0_diff_norm = []
+            self._ind1_diff_norm = []
+            self._ind_diff_norm = []
+            self._weights_diff_norm = []
 
         self._ind_real.append(ind_real)
         self._ind_diff.append(ind_diff)
         self._weights_real.append(weights_real)
         self._weights_diff.append(weights_diff)
+        self._ind0_diff.append(ind0_diff)
+        self._ind1_diff.append(ind1_diff)
+        self._ind0_diff_norm.append(ind0_diff_norm)
+        self._ind1_diff_norm.append(ind1_diff_norm)
+        self._ind_diff_norm.append(ind_diff_norm)
+        self._weights_diff_norm.append(weights_diff_norm)
 
     def _reshape_4D_array_to_2D(
         self,
