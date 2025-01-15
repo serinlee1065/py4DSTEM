@@ -1481,10 +1481,10 @@ class Tomography:
         if dp_patterns.shape[0] == 0:
             update = xp.zeros(object_sliced.shape)
 
-            error = xp.mean(object_sliced.ravel() ** 2)
+            error = xp.mean(object_sliced.ravel() ** 2) ** 0.5
 
             error = copy_to_device(error, "cpu")
-
+            print("hello")
         else:
             weights = np.hstack(
                 [
@@ -1537,7 +1537,9 @@ class Tomography:
 
             update = dp_patterns_counted - object_sliced
 
-            error = xp.mean(update.ravel() ** 2)
+            error = (
+                xp.mean(update.ravel() ** 2) ** 0.5 / dp_patterns_counted.mean(0).sum()
+            )
 
             error = copy_to_device(error, "cpu")
 
