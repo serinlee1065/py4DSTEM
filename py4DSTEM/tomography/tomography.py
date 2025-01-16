@@ -1484,7 +1484,6 @@ class Tomography:
             error = xp.mean(object_sliced.ravel() ** 2) ** 0.5
 
             error = copy_to_device(error, "cpu")
-            print("hello")
         else:
             weights = np.hstack(
                 [
