@@ -1144,7 +1144,10 @@ class Tomography:
         ind_diff_bincount_weight[ind_diff_bincount_weight == 0] = 1
 
         correction_factor_diff = (
-            ind_diff_bincount_weight_norm / ind_diff_bincount_weight
+            ind_diff_bincount_weight_norm
+            / ind_diff_bincount_weight
+            / ind_diff_bincount_norm
+            * ind_diff_bincount
         )
 
         correction_factor_diff = np.repeat(correction_factor_diff, ind_diff_bincount)
@@ -1152,7 +1155,7 @@ class Tomography:
         correction_factor_diff = correction_factor_diff[sorted_indicies].reshape(
             ind_diff.shape
         )
-        weights_diff = weights_diff * correction_factor_diff
+        # weights_diff = weights_diff * correction_factor_diff
 
         if datacube_number == 0:
             self._ind_real = []
