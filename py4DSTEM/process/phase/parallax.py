@@ -32,7 +32,7 @@ from py4DSTEM.process.utils.cross_correlate import align_images_fourier
 from py4DSTEM.process.utils.utils import electron_wavelength_angstrom
 from py4DSTEM.visualize import return_scaled_histogram_ordering
 from scipy.linalg import polar
-from scipy.ndimage import distance_transform_edt
+from scipy.ndimage import distance_transform_edt, shift
 from scipy.special import comb
 
 try:
@@ -316,6 +316,7 @@ class Parallax(PhaseReconstruction):
         normalize_images: bool = True,
         normalize_order=0,
         descan_correction_fit_function: str = None,
+        shifting_interpolation_order: int = 3,
         force_rotation_angle_deg: float = 0,
         force_transpose: bool = None,
         aligned_bf_image_guess: np.ndarray = None,
@@ -354,6 +355,8 @@ class Parallax(PhaseReconstruction):
         descan_correction_fit_function: str, optional
             If not None, descan correction will be performed using fit function.
             One of "constant", "plane", "parabola", or "bezier_two".
+        shifting_interpolation_order: int, optional
+            Spline interpolation order used in shifting DPs to origin. Default is bi-cubic.
         plot_average_bf: bool, optional
             If True, plots the average bright field image, using defocus_guess
         realspace_mask: np.array, optional
@@ -433,15 +436,25 @@ class Parallax(PhaseReconstruction):
 
             for rx in range(intensities_shifted.shape[0]):
                 for ry in range(intensities_shifted.shape[1]):
-                    intensity_shifted = get_shifted_ar(
-                        intensities_np[rx, ry],
-                        -com_fitted_x[rx, ry] + center_x,
-                        -com_fitted_y[rx, ry] + center_y,
-                        bilinear=False,
-                        device="cpu",
-                    )
-
-                    intensities_shifted[rx, ry] = intensity_shifted
+                    if shifting_interpolation_order == 1:
+                        # faster but may lead to gridding artifacts
+                        intensities_shifted[rx, ry] = get_shifted_ar(
+                            intensities_np[rx, ry].astype(np.float32),
+                            -com_fitted_x[rx, ry] + center_x,
+                            -com_fitted_y[rx, ry] + center_y,
+                            bilinear=True,
+                            device="cpu",
+                        )
+                    else:
+                        intensities_shifted[rx, ry] = shift(
+                            intensities_np[rx, ry].astype(np.float32),
+                            (
+                                -com_fitted_x[rx, ry] + center_x,
+                                -com_fitted_y[rx, ry] + center_y,
+                            ),
+                            order=shifting_interpolation_order,
+                            mode="grid-wrap",
+                        )
 
             intensities = xp.asarray(intensities_shifted, xp.float32)
 

@@ -210,6 +210,7 @@ class MixedstatePtychography(
         self,
         diffraction_intensities_shape: Tuple[int, int] = None,
         reshaping_method: str = "bilinear",
+        shifting_interpolation_order: int = 3,
         padded_diffraction_intensities_shape: Tuple[int, int] = None,
         region_of_interest_shape: Tuple[int, int] = None,
         dp_mask: np.ndarray = None,
@@ -257,6 +258,8 @@ class MixedstatePtychography(
             If None, no resampling of diffraction intenstities is performed
         reshaping_method: str, optional
             Method to use for reshaping, either 'bin, 'bilinear', or 'fourier' (default)
+        shifting_interpolation_order: int
+            Spline interpolation order used in shifting DPs to origin. Default is bi-cubic.
         padded_diffraction_intensities_shape: (int,int), optional
             Padded diffraction intensities shape.
             If None, no padding is performed
@@ -444,6 +447,7 @@ class MixedstatePtychography(
             self._positions_mask,
             crop_patterns,
             in_place_datacube_modification,
+            shifting_interpolation_order=shifting_interpolation_order,
         )
 
         # explicitly transfer arrays to storage

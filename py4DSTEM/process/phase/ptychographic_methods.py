@@ -1077,7 +1077,7 @@ class ProbeMethodsMixin:
                     vacuum_probe_intensity,
                     -probe_x0,
                     -probe_y0,
-                    bilinear=False,
+                    bilinear=True,
                     device=device,
                 )
 

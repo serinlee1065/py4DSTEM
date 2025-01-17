@@ -325,6 +325,7 @@ class DirectPtychography(
         bf_disk_padding_px: int = 0,
         dp_mask: np.ndarray = None,
         in_place_datacube_modification: bool = False,
+        shifting_interpolation_order: int = 3,
         fit_function: str = "plane",
         plot_center_of_mass: str = "default",
         plot_rotation: bool = True,
@@ -354,6 +355,8 @@ class DirectPtychography(
         in_place_datacube_modification: bool, optional
             If True, the datacube will be preprocessed in-place. Note this is not possible
             when either crop_patterns or positions_mask are used.
+        shifting_interpolation_order: int
+            Spline interpolation order used in shifting DPs to origin. Default is bi-cubic.
         fit_function: str, optional
             2D fitting function for CoM fitting. One of 'plane','parabola','bezier_two'
         plot_center_of_mass: str, optional
@@ -527,6 +530,7 @@ class DirectPtychography(
             None,
             crop_patterns,
             in_place_datacube_modification,
+            shifting_interpolation_order=shifting_interpolation_order,
             return_intensities_instead=True,
         )
 
@@ -583,7 +587,7 @@ class DirectPtychography(
                 self._vacuum_probe_intensity,
                 -probe_x0,
                 -probe_y0,
-                bilinear=False,
+                bilinear=True,
                 device=device,
             )
 
