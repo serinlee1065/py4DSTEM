@@ -1192,7 +1192,7 @@ class Tomography:
         correction_factor_real = correction_factor_real[sorted_indicies].reshape(
             ind_real.shape
         )
-        # weights_real = weights_real * correction_factor_real
+        weights_real = weights_real * correction_factor_real
 
         # normalization reciprocal space
         bincount_diff_max = np.max((ind_diff.max(), ind_diff_norm.max())) + 1
