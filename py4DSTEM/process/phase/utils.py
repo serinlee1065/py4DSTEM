@@ -179,7 +179,7 @@ class ComplexProbe:
                     xp.asarray(self._vacuum_probe_intensity, dtype=xp.float32),
                     self._origin[0],
                     self._origin[1],
-                    bilinear=False,
+                    bilinear=True,
                     device=self._device,
                 )
             else:

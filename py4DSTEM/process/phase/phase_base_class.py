@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from mpl_toolkits.axes_grid1 import ImageGrid
 from py4DSTEM.visualize import show_complex
-from scipy.ndimage import zoom
+from scipy.ndimage import shift, zoom
 
 try:
     import cupy as cp
@@ -1352,6 +1352,7 @@ class PhaseReconstruction(Custom):
         positions_mask,
         crop_patterns,
         in_place_datacube_modification,
+        shifting_interpolation_order=3,
         return_intensities_instead=False,
     ):
         """
@@ -1371,6 +1372,10 @@ class PhaseReconstruction(Custom):
             If True, patterns are cropped to avoid wrap around of patterns
         in_place_datacube_modification: bool
             If True, the diffraction intensities are modified in-place
+        shifting_interpolation_order: int
+            Spline interpolation order used in shifting DPs to origin. Default is bi-cubic.
+        return_intensities_instead: bool
+            If True, function returns shifted intensities instead of amplitudes. Used in SSB.
 
         Returns
         -------
@@ -1434,13 +1439,22 @@ class PhaseReconstruction(Custom):
                 if not positions_mask[rx, ry]:
                     continue
 
-            intensities = get_shifted_ar(
-                diff_intensities[rx, ry],
-                -com_fitted_x[rx, ry],
-                -com_fitted_y[rx, ry],
-                bilinear=False,
-                device="cpu",
-            )
+            if shifting_interpolation_order == 1:
+                # faster but may lead to gridding artifacts
+                intensities = get_shifted_ar(
+                    diff_intensities[rx, ry].astype(np.float32),
+                    -com_fitted_x[rx, ry],
+                    -com_fitted_y[rx, ry],
+                    bilinear=True,
+                    device="cpu",
+                )
+            else:
+                intensities = shift(
+                    diff_intensities[rx, ry].astype(np.float32),
+                    (-com_fitted_x[rx, ry], -com_fitted_y[rx, ry]),
+                    order=shifting_interpolation_order,
+                    mode="grid-wrap",
+                )
 
             mean_intensity += np.sum(intensities)
             if return_intensities_instead:
