@@ -1171,22 +1171,11 @@ class Tomography:
         ind_real_bincount_weight = ind_real_bincount_weight[ind_real_bincount > 0]
         ind_real_bincount = ind_real_bincount[ind_real_bincount > 0]
 
-        # factor = ind_real_bincount_weight_norm.sum() / ind_real_bincount_weight.sum()
 
-        # ind_real_bincount_weight_norm[ind_real_bincount_weight == 0] = 0
         ind_real_bincount_weight[ind_real_bincount_weight == 0] = 1
-        # ind_real_bincount_weight_norm[ind_real_bincount_norm == 0] = 0
-        # ind_real_bincount_norm[ind_real_bincount_norm == 0] = 1
 
-        # correction_factor_real = (
-        #     ind_real_bincount_weight_norm
-        #     / ind_real_bincount_weight
-        #     * ind_real_bincount_norm
-        #     / ind_real_bincount
-        # )
 
         correction_factor_real = ind_real_bincount_weight_norm / ind_real_bincount_weight
-        # correction_factor_real = 1 / ind_real_bincount_weight
 
         correction_factor_real = np.repeat(correction_factor_real, ind_real_bincount)
         sorted_indicies = np.argsort(np.argsort(ind_real.ravel()))
@@ -1228,8 +1217,6 @@ class Tomography:
         correction_factor_diff = (
             ind_diff_bincount_weight_norm
             / ind_diff_bincount_weight
-            # / ind_diff_bincount_norm
-            # * ind_diff_bincount
         )
 
         correction_factor_diff = np.repeat(correction_factor_diff, ind_diff_bincount)
