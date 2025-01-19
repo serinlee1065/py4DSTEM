@@ -1171,11 +1171,11 @@ class Tomography:
         ind_real_bincount_weight = ind_real_bincount_weight[ind_real_bincount > 0]
         ind_real_bincount = ind_real_bincount[ind_real_bincount > 0]
 
-
         ind_real_bincount_weight[ind_real_bincount_weight == 0] = 1
 
-
-        correction_factor_real = ind_real_bincount_weight_norm / ind_real_bincount_weight
+        correction_factor_real = (
+            ind_real_bincount_weight_norm / ind_real_bincount_weight
+        )
 
         correction_factor_real = np.repeat(correction_factor_real, ind_real_bincount)
         sorted_indicies = np.argsort(np.argsort(ind_real.ravel()))
@@ -1183,8 +1183,6 @@ class Tomography:
             ind_real.shape
         )
         weights_real = weights_real * correction_factor_real
-
-
 
         # normalization reciprocal space
         bincount_diff_max = np.max((ind_diff.max(), ind_diff_norm.max())) + 1
@@ -1215,8 +1213,7 @@ class Tomography:
         ind_diff_bincount_norm[ind_diff_bincount_norm == 0] = 1
 
         correction_factor_diff = (
-            ind_diff_bincount_weight_norm
-            / ind_diff_bincount_weight
+            ind_diff_bincount_weight_norm / ind_diff_bincount_weight
         )
 
         correction_factor_diff = np.repeat(correction_factor_diff, ind_diff_bincount)
@@ -1917,339 +1914,325 @@ class Tomography:
 
         return scan
 
-    #### Code for sims, To be removed later
-    # def _make_test_object(
-    #     self,
-    #     sx: int,
-    #     sy: int,
-    #     sz: int,
-    #     sq: int,
-    #     q_max: float,
-    #     r: int,
-    #     num: int,
-    # ):
-    #     """
-    #     Make test object with 3D gold cubes at random orientations
-
-    #     Parameters
-    #     ----------
-    #     sx: int
-    #         x size (pixels)
-    #     sy: int
-    #         y size (pixels)
-    #     sz: int
-    #         z size (pixels)
-    #     sq: int
-    #         q size (pixels)
-    #     q_max: float
-    #         maximum scattering angle (A^-1)
-    #     r: int
-    #         length of 3D gold cubes
-    #     num: int
-    #         number of cubes
-
-    #     Returns
-    #     --------
-    #     test_object: np.ndarray
-    #         6D test object
-    #     """
-    #     xp_storage = self._xp_storage
-    #     storage = self._storage
-
-    #     test_object = xp_storage.zeros((sx, sy, sz, sq, sq, sq))
-
-    #     diffraction_cloud = self._make_diffraction_cloud(sq, q_max, [0, 0, 0])
-
-    #     test_object[:, :, :, 0, 0, 0] = copy_to_device(diffraction_cloud.sum(), storage)
-
-    #     for a0 in range(num):
-    #         s1 = xp_storage.random.randint(r, sx - r)
-    #         s2 = xp_storage.random.randint(r, sy - r)
-    #         h = xp_storage.random.randint(r, sz - r, size=1)
-    #         t = xp_storage.random.randint(0, 360, size=3)
-
-    #         cloud = copy_to_device(self._make_diffraction_cloud(sq, q_max, t), storage)
-
-    #         test_object[s1 - r : s1 + r, s2 - r : s2 + r, h[0] - r : h[0] + r] = cloud
-
-    #     return test_object
-
-    # def _forward_simulation(
-    #     self,
-    #     current_object: np.ndarray,
-    #     tilt_deg: int,
-    #     x_index: int,
-    #     num_points: np.ndarray = 60,
-    # ):
-    #     """
-    #     Forward projection of object for simulation of diffraction data
-
-    #     Parameters
-    #     ----------
-    #     current_object: np.ndarray
-    #         current object estimate
-    #     tilt_deg: float
-    #         tilt of object in degrees
-    #     x_index: int
-    #         x slice of object to be sliced
-    #     num_points: float
-    #         number of points for bilinear interpolation
-
-    #     Returns
-    #     --------
-    #     current_object_sliced: np.ndarray
-    #         projection of current object sliced in diffraciton space
-    #     """
-    #     current_object_projected = self._real_space_radon(
-    #         current_object,
-    #         tilt_deg,
-    #         x_index,
-    #         num_points,
-    #     )
-
-    #     current_object_sliced = self._diffraction_space_slice(
-    #         current_object_projected,
-    #         tilt_deg,
-    #     )
-
-    #     return current_object_sliced
-
-    # def _diffraction_space_slice(
-    #     self,
-    #     current_object_projected: np.ndarray,
-    #     tilt_deg: int,
-    # ):
-    #     """
-    #     Slicing of diffraction space for rotated object
-
-    #     Parameters
-    #     ----------
-    #     current_object_rotated: np.ndarray
-    #         current object estimate projected
-    #     tilt_deg: float
-    #         tilt of object in degrees
-
-    #     Returns
-    #     --------
-    #     current_object_sliced: np.ndarray
-    #         projection of current object sliced in diffraciton space
-
-    #     """
-    #     xp = self._xp
-
-    #     s = current_object_projected.shape
-
-    #     tilt = xp.deg2rad(tilt_deg)
-
-    #     line_y_diff = xp.fft.fftfreq(s[-1], 1 / s[-1]) * xp.cos(tilt)
-    #     line_z_diff = xp.fft.fftfreq(s[-1], 1 / s[-1]) * xp.sin(tilt)
-
-    #     yF_diff = xp.floor(line_y_diff).astype("int")
-    #     zF_diff = xp.floor(line_z_diff).astype("int")
-    #     dy_diff = line_y_diff - yF_diff
-    #     dz_diff = line_z_diff - zF_diff
-
-    #     current_object_sliced = xp.zeros((s[0], s[-1], s[-1]))
-
-    #     current_object_sliced = (
-    #         current_object_projected[:, :, yF_diff, zF_diff]
-    #         * ((1 - dy_diff) * (1 - dz_diff))[None, None, :]
-    #         + current_object_projected[:, :, yF_diff + 1, zF_diff]
-    #         * ((dy_diff) * (1 - dz_diff))[None, None, :]
-    #         + current_object_projected[:, :, yF_diff, zF_diff + 1]
-    #         * ((1 - dy_diff) * (dz_diff))[None, None, :]
-    #         + current_object_projected[:, :, yF_diff + 1, zF_diff + 1]
-    #         * ((dy_diff) * (dz_diff))[None, None, :]
-    #     )
-
-    #     return self._asnumpy(current_object_sliced)
-
-    # def _real_space_radon(
-    #     self,
-    #     current_object: np.ndarray,
-    #     tilt_deg: int,
-    #     x_index: int,
-    #     num_points: int,
-    # ):
-    #     """
-    #     Real space projection of current object
-
-    #     Parameters
-    #     ----------
-    #     current_object: np.ndarray
-    #         current object estimate
-    #     tilt_deg: float
-    #         tilt of object in degrees
-    #     x_index: int
-    #         x slice of object to be sliced
-    #     num_points: float
-    #         number of points for bilinear interpolation
-
-    #     Returns
-    #     --------
-    #     current_object_projected: np.ndarray
-    #         projection of current object
-
-    #     """
-    #     xp = self._xp
-    #     device = self._device
-
-    #     current_object = copy_to_device(current_object, device)
-
-    #     s = current_object.shape
-
-    #     tilt = xp.deg2rad(tilt_deg)
-
-    #     padding = int(xp.ceil(xp.abs(xp.tan(tilt) * s[2])))
-
-    #     line_z = xp.arange(0, 1, 1 / num_points) * (s[2] - 1)
-    #     line_y = line_z * xp.tan(tilt) + padding
-
-    #     offset = xp.arange(s[1], dtype="int")
-
-    #     current_object_reshape = xp.pad(
-    #         current_object[x_index],
-    #         ((padding, padding), (0, 0), (0, 0), (0, 0), (0, 0)),
-    #     ).reshape(((s[1] + padding * 2) * s[2], s[3], s[4], s[5]))
-
-    #     current_object_projected = xp.zeros((s[1], s[3], s[4], s[5]))
-
-    #     yF = xp.floor(line_y).astype("int")
-    #     zF = xp.floor(line_z).astype("int")
-    #     dy = line_y - yF
-    #     dz = line_z - zF
-
-    #     ind0 = np.hstack(
-    #         (
-    #             xp.tile(yF, (s[1], 1)) + offset[:, None],
-    #             xp.tile(yF + 1, (s[1], 1)) + offset[:, None],
-    #             xp.tile(yF, (s[1], 1)) + offset[:, None],
-    #             xp.tile(yF + 1, (s[1], 1)) + offset[:, None],
-    #         )
-    #     )
-
-    #     ind1 = np.hstack(
-    #         (
-    #             xp.tile(zF, (s[1], 1)),
-    #             xp.tile(zF, (s[1], 1)),
-    #             xp.tile(zF + 1, (s[1], 1)),
-    #             xp.tile(zF + 1, (s[1], 1)),
-    #         )
-    #     )
-
-    #     weights = np.hstack(
-    #         (
-    #             xp.tile(((1 - dy) * (1 - dz)), (s[1], 1)),
-    #             xp.tile(((dy) * (1 - dz)), (s[1], 1)),
-    #             xp.tile(((1 - dy) * (dz)), (s[1], 1)),
-    #             xp.tile(((dy) * (dz)), (s[1], 1)),
-    #         )
-    #     )
-
-    #     current_object_projected += (
-    #         current_object_reshape[
-    #             xp.ravel_multi_index(
-    #                 (ind0, ind1), (s[1] + 2 * padding, s[2]), mode="clip"
-    #             )
-    #         ]
-    #         * weights[:, :, None, None, None]
-    #     ).sum(1)
-
-    #     return current_object_projected
-
-    # def _make_diffraction_cloud(
-    #     self,
-    #     sq,
-    #     q_max,
-    #     rot,
-    # ):
-    #     """
-    #     Make 3D diffraction cloud
-
-    #     Parameters
-    #     ----------
-    #     sq: int
-    #         q size (pixels)
-    #     q_max: float
-    #         maximum scattering angle (A^-1)
-    #     rot: 3-tuple
-    #         rotation of cloud
-
-    #     Returns
-    #     --------
-    #     diffraction_cloud: np.ndarray
-    #         3D structure factor
-
-    #     """
-    #     xp = self._xp
-
-    #     gold = self._make_gold(q_max)
-
-    #     diffraction_cloud = xp.zeros((sq, sq, sq))
-
-    #     q_step = q_max * 2 / (sq - 1)
-
-    #     qz = xp.fft.ifftshift(xp.arange(sq) * q_step - q_step * (sq - 1) / 2)
-    #     qx = xp.fft.ifftshift(xp.arange(sq) * q_step - q_step * (sq - 1) / 2)
-    #     qy = xp.fft.ifftshift(xp.arange(sq) * q_step - q_step * (sq - 1) / 2)
-
-    #     qxa, qya, qza = xp.meshgrid(qx, qy, qz, indexing="ij")
-
-    #     g_vecs = gold.g_vec_all.copy()
-    #     r = R.from_euler("zxz", [rot[0], rot[1], rot[2]])
-    #     g_vecs = r.as_matrix() @ g_vecs
-
-    #     cut_off = 0.1
-
-    #     for a0 in range(gold.g_vec_all.shape[1]):
-    #         bragg_spot = g_vecs[:, a0]
-    #         distance = xp.sqrt(
-    #             (qxa - bragg_spot[0]) ** 2
-    #             + (qya - bragg_spot[1]) ** 2
-    #             + (qza - bragg_spot[2]) ** 2
-    #         )
-
-    #         update_index = distance < cut_off
-    #         update = xp.zeros((distance.shape))
-    #         update[update_index] = cut_off - distance[update_index]
-    #         update -= xp.min(update)
-    #         update /= xp.sum(update)
-    #         update *= gold.struct_factors_int[a0]
-    #         diffraction_cloud += update
-
-    #     return diffraction_cloud
-
-    # def _make_gold(
-    #     self,
-    #     q_max,
-    # ):
-    #     """
-    #     Calculate structure factor for gold up to q_max
-
-    #     Parameters
-    #     ----------
-    #     q_max: float
-    #         maximum scattering angle (A^-1)
-
-    #     Returns
-    #     --------
-    #     crystal: Crystal
-    #         gold crystal with structure factor calculated to q_max
-
-    #     """
-
-    #     pos = [
-    #         [0.0, 0.0, 0.0],
-    #         [0.0, 0.5, 0.5],
-    #         [0.5, 0.0, 0.5],
-    #         [0.5, 0.5, 0.0],
-    #     ]
-    #     atom_num = 79
-    #     a = 4.08
-    #     cell = a
-
-    #     crystal = Crystal(pos, atom_num, cell)
-
-    #     crystal.calculate_structure_factors(q_max)
-
-    #     return crystal
+    def widget(
+        self,
+        cyliner_mask=False,
+        mode="dark-field",
+        virtual_image_mask_radius=4,
+    ):
+        """ """
+        from ipywidgets import HBox, VBox, widgets, interact, Dropdown, Label, Layout
+        from skimage.feature import peak_local_max
+        from scipy.ndimage import gaussian_filter
+        from py4DSTEM.visualize import return_scaled_histogram_ordering
+
+        obj_6D = self.object_6D.copy()
+        obj_6D /= obj_6D.mean()
+
+        if cyliner_mask:
+            cylinder_mask = np.zeros((obj_6D.shape[0:3]))
+            x = np.arange(obj_6D.shape[0])
+            y = np.arange(obj_6D.shape[0])
+            xx, yy = np.meshgrid(x, y, indexing="ij")
+            center = (np.mean(x), np.mean(y))
+            cylinder_mask[
+                :,
+                (xx - center[0]) ** 2 + (yy - center[1]) ** 2
+                <= ((center[0] + center[1]) / 2) ** 2,
+            ] = 1
+            obj_6D *= cyliner_mask[:, :, :, None, None, None]
+
+        diffraction_kernel = np.ones((obj_6D.shape[3:]))
+        if mode == "dark-field":
+            center = obj_6D.shape[3] // 2
+            diffraction_kernel[
+                center - virtual_image_mask_radius : center + virtual_image_mask_radius,
+                center - virtual_image_mask_radius : center + virtual_image_mask_radius,
+                center - virtual_image_mask_radius : center + virtual_image_mask_radius,
+            ] = 0
+        elif mode == "bright-field":
+            center = obj_6D.shape[3] // 2
+            diffraction_kernel[
+                center - virtual_image_mask_radius : center + virtual_image_mask_radius,
+                center - virtual_image_mask_radius : center + virtual_image_mask_radius,
+                center - virtual_image_mask_radius : center + virtual_image_mask_radius,
+            ] = 0
+            diffraction_kernel = -1 * diffraction_kernel + 1
+
+        _, vmin, vmax = return_scaled_histogram_ordering(
+            ((obj_6D) * diffraction_kernel[None, None, None, :, :]).mean((3, 4, 5)),
+        )
+
+        # %matplotlib ipympl
+
+        with plt.ioff():
+            fig = plt.figure(figsize=(6.5, 3))
+            ax0 = fig.add_subplot(1, 3, 1)
+            ax1 = fig.add_subplot(1, 3, 2)
+            ax2 = fig.add_subplot(1, 3, 3, projection="3d")
+
+        x = obj_6D.shape[0] // 2
+        y = obj_6D.shape[1] // 2
+        z = obj_6D.shape[2] // 2
+        gaussian_filter_sigma = 1.5
+        min_distance = 1
+
+        ax0.imshow(
+            (obj_6D[:, :, z] * diffraction_kernel[None, None, :, :]).mean((2, 3, 4)),
+            cmap="gray",
+            vmin=vmin,
+            vmax=vmax,
+        )
+        ax0.scatter(y, x, color="red")
+
+        ax1.imshow(
+            (
+                obj_6D[
+                    :,
+                    y,
+                    :,
+                ]
+                * diffraction_kernel[None, None, :, :]
+            )
+            .mean((2, 3, 4))
+            .T,
+            cmap="gray",
+            vmin=vmin,
+            vmax=vmax,
+        )
+        ax1.scatter(x, z, color="red")
+
+        plot_data = gaussian_filter(
+            obj_6D[
+                x,
+                y,
+                z,
+            ],
+            gaussian_filter_sigma,
+        )
+        ind = peak_local_max(plot_data, min_distance=min_distance)
+        ax2.scatter(
+            ind[:, 0],
+            ind[:, 1],
+            ind[:, 2],
+            s=plot_data[ind[:, 0], ind[:, 1], ind[:, 2]] / 2,
+            color="red",
+        )
+
+        ax0.set_title("xy")
+        ax1.set_title("xz")
+        ax2.set_title("Diffraction")
+
+        ax0.set_xticks([])
+        ax1.set_xticks([])
+        ax2.set_xticks([])
+        ax0.set_yticks([])
+        ax1.set_yticks([])
+        ax2.set_yticks([])
+        ax2.set_zticks([])
+
+        ax2.set_xlim([0, obj_6D.shape[3]])
+        ax2.set_ylim([0, obj_6D.shape[4]])
+        ax2.set_zlim([0, obj_6D.shape[5]])
+
+        plt.tight_layout()
+
+        im0 = ax0.get_images()[0]
+        im1 = ax1.get_images()[0]
+
+        # interact
+        def update_images(
+            x,
+            y,
+            z,
+            gaussian_filter_diffraction,
+            minimum_threshold,
+            intensities_power,
+            scale_intensities,
+        ):
+            ax0.clear()
+            ax0.imshow(
+                (
+                    obj_6D[
+                        :,
+                        :,
+                        z,
+                    ]
+                    * diffraction_kernel[None, None, :, :]
+                ).mean((2, 3, 4)),
+                cmap="gray",
+                vmin=vmin,
+                vmax=vmax,
+            )
+            ax0.scatter(y, x, color="red")
+
+            ax1.clear()
+            ax1.imshow(
+                (
+                    obj_6D[
+                        :,
+                        y,
+                        :,
+                    ]
+                    * diffraction_kernel[None, None, :, :]
+                )
+                .mean((2, 3, 4))
+                .T,
+                cmap="gray",
+                vmin=vmin,
+                vmax=vmax,
+            )
+            ax1.scatter(x, z, color="red")
+
+            plot_data = gaussian_filter(obj_6D[x, y, z], gaussian_filter_diffraction)
+            ind = peak_local_max(plot_data, min_distance=min_distance)
+
+            max_intensity = np.max(plot_data[ind[:, 0], ind[:, 1], ind[:, 2]])
+            min_intensity = minimum_threshold * max_intensity
+
+            ind_keep = (
+                plot_data[ind[:, 0], ind[:, 1], ind[:, 2]] ** scale_intensities
+                > min_intensity**intensities_power
+            )
+            ind = ind[ind_keep]
+
+            ax2.clear()
+            ax2.scatter(
+                ind[:, 0],
+                ind[:, 1],
+                ind[:, 2],
+                s=scale_intensities
+                * plot_data[ind[:, 0], ind[:, 1], ind[:, 2]] ** intensities_power,
+                color="red",
+            )
+
+            ax0.set_xticks([])
+            ax1.set_xticks([])
+            ax2.set_xticks([])
+            ax0.set_yticks([])
+            ax1.set_yticks([])
+            ax2.set_yticks([])
+            ax2.set_zticks([])
+
+            ax2.set_xlim([0, obj_6D.shape[3]])
+            ax2.set_ylim([0, obj_6D.shape[4]])
+            ax2.set_zlim([0, obj_6D.shape[5]])
+
+            ax0.set_title("xy")
+            ax1.set_title("xz")
+            ax2.set_title("Diffraction")
+
+            plt.tight_layout()
+
+            fig.canvas.draw_idle()
+
+        style = {
+            "description_width": "initial",
+        }
+
+        layout = Layout(width="250px", height="30px")
+
+        x = widgets.IntSlider(
+            value=obj_6D.shape[0] // 2,
+            min=0,
+            max=obj_6D.shape[0] - 1,
+            step=1,
+            description="x",
+            style=style,
+            layout=layout,
+        )
+
+        y = widgets.IntSlider(
+            value=obj_6D.shape[1] // 2,
+            min=0,
+            max=obj_6D.shape[1] - 1,
+            step=1,
+            description="y",
+            style=style,
+            layout=layout,
+        )
+
+        z = widgets.IntSlider(
+            value=obj_6D.shape[2] // 2,
+            min=0,
+            max=obj_6D.shape[2] - 1,
+            step=1,
+            description="z",
+            style=style,
+            layout=layout,
+        )
+
+        gaussian_filter_diffraction = widgets.FloatSlider(
+            value=1.2,
+            min=0,
+            max=3,
+            step=0.1,
+            description="filter",
+            style=style,
+            layout=layout,
+        )
+
+        minimum_threshold = widgets.FloatSlider(
+            value=0.25,
+            min=0,
+            max=1,
+            step=0.01,
+            description="min threshold",
+            style=style,
+            layout=layout,
+        )
+
+        intensities_power = widgets.FloatSlider(
+            value=0.5,
+            min=0,
+            max=2,
+            step=0.05,
+            description="intensities power",
+            style=style,
+            layout=layout,
+        )
+
+        scale_intensities = widgets.FloatSlider(
+            value=2,
+            min=0,
+            max=20,
+            step=0.2,
+            description="scale intensities",
+            style=style,
+            layout=layout,
+        )
+
+        widgets.interactive_output(
+            update_images,
+            {
+                "x": x,
+                "y": y,
+                "z": z,
+                "gaussian_filter_diffraction": gaussian_filter_diffraction,
+                "minimum_threshold": minimum_threshold,
+                "intensities_power": intensities_power,
+                "scale_intensities": scale_intensities,
+            },
+        )
+
+        fig.canvas.resizable = False
+        fig.canvas.header_visible = False
+        fig.canvas.footer_visible = False
+        fig.canvas.toolbar_visible = True
+        fig.canvas.layout.width = "675px"
+        fig.canvas.layout.height = "400px"
+        fig.canvas.toolbar_position = "bottom"
+
+        widget = widgets.VBox(
+            [
+                fig.canvas,
+                HBox([x, y]),
+                HBox([z, gaussian_filter_diffraction]),
+                HBox([minimum_threshold, scale_intensities]),
+                HBox([intensities_power]),
+            ],
+        )
+
+        display(widget)
+
+        return self
