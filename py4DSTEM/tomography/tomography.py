@@ -1100,9 +1100,14 @@ class Tomography:
         )
 
         # solve for diffraction normalization
-        line_y_diff_norm = np.arange(-(s[-1] - 1) / 2, s[-1] / 2)
-        line_z_diff_norm = line_y_diff_norm * np.tan(tilt) + (s[-1] - 1) / 2
-        line_y_diff_norm += (s[-1] - 1) / 2
+        if np.abs(tilt) <= np.pi / 8:
+            line_y_diff_norm = np.arange(-(s[-1] - 1) / 2, s[-1] / 2)
+            line_z_diff_norm = line_y_diff_norm * np.tan(tilt) + (s[-1] - 1) / 2
+            line_y_diff_norm += (s[-1] - 1) / 2
+        else:
+            line_z_diff_norm = np.arange(-(s[-1] - 1) / 2, s[-1] / 2)
+            line_y_diff_norm = line_z_diff_norm / np.tan(tilt) + (s[-1] - 1) / 2
+            line_z_diff_norm += (s[-1] - 1) / 2
 
         yF_diff_norm = np.floor(line_y_diff_norm).astype("int")
         zF_diff_norm = np.floor(line_z_diff_norm).astype("int")
@@ -1129,10 +1134,10 @@ class Tomography:
 
         weights_diff_norm = np.hstack(
             (
-                np.tile(((1 - dy_diff) * (1 - dz_diff_norm)), s[-1]),
-                np.tile(((dy_diff) * (1 - dz_diff_norm)), s[-1]),
-                np.tile(((1 - dy_diff) * (dz_diff_norm)), s[-1]),
-                np.tile(((dy_diff) * (dz_diff_norm)), s[-1]),
+                np.tile(((1 - dy_diff_norm) * (1 - dz_diff_norm)), s[-1]),
+                np.tile(((dy_diff_norm) * (1 - dz_diff_norm)), s[-1]),
+                np.tile(((1 - dy_diff_norm) * (dz_diff_norm)), s[-1]),
+                np.tile(((dy_diff_norm) * (dz_diff_norm)), s[-1]),
             )
         )
 
@@ -1185,7 +1190,7 @@ class Tomography:
         weights_real = weights_real * correction_factor_real
 
         # normalization reciprocal space
-        bincount_diff_max = np.max((ind_diff.max(), ind_diff_norm.max())) + 1
+        bincount_diff_max = s[3] * s[4] * s[5]
 
         ind_diff_bincount_weight = np.bincount(
             ind_diff.ravel(), weights_diff.ravel(), minlength=bincount_diff_max
@@ -1197,6 +1202,7 @@ class Tomography:
             weights_diff_norm.ravel(),
             minlength=bincount_diff_max,
         )
+
         ind_diff_bincount_norm = np.bincount(
             ind_diff_norm.ravel(), minlength=bincount_diff_max
         )
@@ -1208,12 +1214,16 @@ class Tomography:
         ind_diff_bincount_weight = ind_diff_bincount_weight[ind_diff_bincount > 0]
         ind_diff_bincount = ind_diff_bincount[ind_diff_bincount > 0]
 
+        ind_diff_bincount_weight_norm[ind_diff_bincount_weight == 0] = 0
         ind_diff_bincount_weight[ind_diff_bincount_weight == 0] = 1
-        ind_diff_bincount_weight_norm[ind_diff_bincount_norm == 0] = 0
-        ind_diff_bincount_norm[ind_diff_bincount_norm == 0] = 1
+        ind_diff_bincount_weight_norm[ind_diff_bincount == 0] = 1
+        ind_diff_bincount[ind_diff_bincount == 0] = 1
 
         correction_factor_diff = (
-            ind_diff_bincount_weight_norm / ind_diff_bincount_weight
+            ind_diff_bincount_weight_norm
+            / ind_diff_bincount_weight
+            * ind_diff_bincount_weight.sum()
+            / ind_diff_bincount_weight_norm.sum()
         )
 
         correction_factor_diff = np.repeat(correction_factor_diff, ind_diff_bincount)
@@ -1221,6 +1231,7 @@ class Tomography:
         correction_factor_diff = correction_factor_diff[sorted_indicies].reshape(
             ind_diff.shape
         )
+
         weights_diff = weights_diff * correction_factor_diff
 
         if datacube_number == 0:
