@@ -1004,48 +1004,48 @@ class Tomography:
 
         ind_real = np.ravel_multi_index((ind0, ind1), (s[1], s[2]), mode="clip")
 
-        # # solve for real space normalization
-        # num_points_norm = s[2]
-        # line_z_norm = np.linspace(0, 1, num_points_norm) * (s[2] - 1)
-        # line_y_norm = line_z_norm * np.tan(tilt)
-        # line_y_norm -= np.mean(line_y_norm)
-        # offset = np.arange(s[1], dtype="int")
+        # solve for real space normalization
+        num_points_norm = s[2]
+        line_z_norm = np.linspace(0, 1, num_points_norm) * (s[2] - 1)
+        line_y_norm = line_z_norm * np.tan(tilt)
+        line_y_norm -= np.mean(line_y_norm)
+        offset = np.arange(s[1], dtype="int")
 
-        # yF_norm = np.floor(line_y_norm).astype("int")
-        # zF_norm = np.floor(line_z_norm).astype("int")
-        # dy_norm = line_y_norm - yF_norm
-        # dz_norm = line_z_norm - zF_norm
+        yF_norm = np.floor(line_y_norm).astype("int")
+        zF_norm = np.floor(line_z_norm).astype("int")
+        dy_norm = line_y_norm - yF_norm
+        dz_norm = line_z_norm - zF_norm
 
-        # ind0_norm = np.hstack(
-        #     (
-        #         np.tile(yF_norm, (s[1], 1)) + offset[:, None],
-        #         np.tile(yF_norm + 1, (s[1], 1)) + offset[:, None],
-        #         np.tile(yF_norm, (s[1], 1)) + offset[:, None],
-        #         np.tile(yF_norm + 1, (s[1], 1)) + offset[:, None],
-        #     )
-        # )
+        ind0_norm = np.hstack(
+            (
+                np.tile(yF_norm, (s[1], 1)) + offset[:, None],
+                np.tile(yF_norm + 1, (s[1], 1)) + offset[:, None],
+                np.tile(yF_norm, (s[1], 1)) + offset[:, None],
+                np.tile(yF_norm + 1, (s[1], 1)) + offset[:, None],
+            )
+        )
 
-        # ind1_norm = np.hstack(
-        #     (
-        #         np.tile(zF_norm, (s[1], 1)),
-        #         np.tile(zF_norm, (s[1], 1)),
-        #         np.tile(zF_norm + 1, (s[1], 1)),
-        #         np.tile(zF_norm + 1, (s[1], 1)),
-        #     )
-        # )
+        ind1_norm = np.hstack(
+            (
+                np.tile(zF_norm, (s[1], 1)),
+                np.tile(zF_norm, (s[1], 1)),
+                np.tile(zF_norm + 1, (s[1], 1)),
+                np.tile(zF_norm + 1, (s[1], 1)),
+            )
+        )
 
-        # weights_real_norm = np.hstack(
-        #     (
-        #         np.tile(((1 - dy_norm) * (1 - dz_norm)), (s[1], 1)),
-        #         np.tile(((dy_norm) * (1 - dz_norm)), (s[1], 1)),
-        #         np.tile(((1 - dy_norm) * (dz_norm)), (s[1], 1)),
-        #         np.tile(((dy_norm) * (dz_norm)), (s[1], 1)),
-        #     )
-        # )
+        weights_real_norm = np.hstack(
+            (
+                np.tile(((1 - dy_norm) * (1 - dz_norm)), (s[1], 1)),
+                np.tile(((dy_norm) * (1 - dz_norm)), (s[1], 1)),
+                np.tile(((1 - dy_norm) * (dz_norm)), (s[1], 1)),
+                np.tile(((dy_norm) * (dz_norm)), (s[1], 1)),
+            )
+        )
 
-        # ind_real_norm = np.ravel_multi_index(
-        #     (ind0_norm, ind1_norm), (s[1], s[2]), mode="clip"
-        # )
+        ind_real_norm = np.ravel_multi_index(
+            (ind0_norm, ind1_norm), (s[1], s[2]), mode="clip"
+        )
 
         # solve for diffraction space coordinates
         length = s[-1] * np.cos(tilt)
@@ -1154,19 +1154,19 @@ class Tomography:
         )
         ind_real_bincount = np.bincount(ind_real.ravel(), minlength=bincount_real_max)
 
-        # ind_real_bincount_weight_norm = np.bincount(
-        #     ind_real_norm.ravel(),
-        #     weights_real_norm.ravel(),
-        #     minlength=bincount_real_max,
-        # )
-        # ind_real_bincount_norm = np.bincount(
-        #     ind_real_norm.ravel(), minlength=bincount_real_max
-        # )
+        ind_real_bincount_weight_norm = np.bincount(
+            ind_real_norm.ravel(),
+            weights_real_norm.ravel(),
+            minlength=bincount_real_max,
+        )
+        ind_real_bincount_norm = np.bincount(
+            ind_real_norm.ravel(), minlength=bincount_real_max
+        )
 
-        # ind_real_bincount_weight_norm = ind_real_bincount_weight_norm[
-        #     ind_real_bincount > 0
-        # ]
-        # ind_real_bincount_norm = ind_real_bincount_norm[ind_real_bincount > 0]
+        ind_real_bincount_weight_norm = ind_real_bincount_weight_norm[
+            ind_real_bincount > 0
+        ]
+        ind_real_bincount_norm = ind_real_bincount_norm[ind_real_bincount > 0]
 
         ind_real_bincount_weight = ind_real_bincount_weight[ind_real_bincount > 0]
         ind_real_bincount = ind_real_bincount[ind_real_bincount > 0]
@@ -1185,7 +1185,8 @@ class Tomography:
         #     / ind_real_bincount
         # )
 
-        correction_factor_real = 1 / ind_real_bincount_weight
+        correction_factor_real = ind_real_bincount_weight_norm / ind_real_bincount_weight
+        # correction_factor_real = 1 / ind_real_bincount_weight
 
         correction_factor_real = np.repeat(correction_factor_real, ind_real_bincount)
         sorted_indicies = np.argsort(np.argsort(ind_real.ravel()))
@@ -1193,6 +1194,8 @@ class Tomography:
             ind_real.shape
         )
         weights_real = weights_real * correction_factor_real
+
+
 
         # normalization reciprocal space
         bincount_diff_max = np.max((ind_diff.max(), ind_diff_norm.max())) + 1
@@ -1225,8 +1228,8 @@ class Tomography:
         correction_factor_diff = (
             ind_diff_bincount_weight_norm
             / ind_diff_bincount_weight
-            / ind_diff_bincount_norm
-            * ind_diff_bincount
+            # / ind_diff_bincount_norm
+            # * ind_diff_bincount
         )
 
         correction_factor_diff = np.repeat(correction_factor_diff, ind_diff_bincount)
@@ -1234,7 +1237,7 @@ class Tomography:
         correction_factor_diff = correction_factor_diff[sorted_indicies].reshape(
             ind_diff.shape
         )
-        # weights_diff = weights_diff * correction_factor_diff
+        weights_diff = weights_diff * correction_factor_diff
 
         if datacube_number == 0:
             self._ind_real = []
