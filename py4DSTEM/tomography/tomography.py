@@ -197,6 +197,7 @@ class Tomography:
         """
         xp_storage = self._xp_storage
         storage = self._storage
+        xp = self._xp
 
         self._num_datacubes = len(self._datacubes)
 
@@ -311,6 +312,22 @@ class Tomography:
                 datacube_number=a0,
                 num_points=num_points,
             )
+
+        weights_all = xp.array(self._weights_diff).flatten()
+        ind_all = xp.array(self._ind_diff).flatten()
+        weights_diff_all_counted = xp.bincount(
+            ind_all,
+            weights=weights_all,
+            minlength=self._object_shape_6D[3]
+            * self._object_shape_6D[4]
+            * self._object_shape_6D[5],
+        )
+
+        # weights_diff_all_counted = weights_diff_all_counted.reshape(
+        #     self._object_shape_6D[3:]
+        # )
+
+        self._weights_diff_all_counted = weights_diff_all_counted
 
         return self
 
@@ -1704,6 +1721,14 @@ class Tomography:
             update_reshaped.ravel(),
             minlength=((diff_max) * real_shape),
         ).reshape((real_shape, -1))[:, diff_bincount > 0]
+
+        correction_factor = self._weights_diff_all_counted[np.unique(diff_index)]
+        correction_factor[correction_factor ==0 ] = 1
+        # from pdb import set_trace
+        # set_trace()
+
+        update_q_summed /= correction_factor
+        # print(correction_factor.max(), correction_factor.min())
 
         diff_shape_bin = update_q_summed.shape[-1]
 
