@@ -83,7 +83,7 @@ def compute_WK_factor(
     WK = np.zeros_like(S)
     for i in range(4):
         argu = B[i] * S**2
-        sub = argu < 1.0
+        sub = argu < 0.1
         WK[sub] += A[i] * B[i] * (1.0 - 0.5 * argu[sub])
         sub = np.logical_and(argu >= 1.0, argu <= 20.0)
         WK[sub] += A[i] * (1.0 - np.exp(-argu[sub])) / S[sub] ** 2
