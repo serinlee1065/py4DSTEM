@@ -102,6 +102,7 @@ class CrystalPhase:
         plot_correlation_radius=False,
         scale_markers_experiment=40,
         scale_markers_calculated=200,
+        max_marker_size = 400,
         crystal_inds_plot=None,
         phase_colors=None,
         figsize=(10, 7),
@@ -615,8 +616,11 @@ class CrystalPhase:
                 qy0,
                 qx0,
                 # s = scale_markers_experiment * intensity0,
-                s=scale_markers_experiment
-                * bragg_peaks.data["intensity"][np.logical_not(keep)],
+                s=np.minimum(
+                    scale_markers_experiment
+                    * bragg_peaks.data["intensity"][np.logical_not(keep)],
+                    max_marker_size,
+                ),
                 marker="o",
                 facecolor=[0.7, 0.7, 0.7],
             )
@@ -624,7 +628,11 @@ class CrystalPhase:
                 qy,
                 qx,
                 # s = scale_markers_experiment * intensity,
-                s=scale_markers_experiment * bragg_peaks.data["intensity"][keep],
+                s=np.minimum(
+                    scale_markers_experiment 
+                    * bragg_peaks.data["intensity"][keep],
+                    max_marker_size,
+                ),
                 marker="o",
                 facecolor=[0.7, 0.7, 0.7],
             )
@@ -799,6 +807,7 @@ class CrystalPhase:
         strain_max=0.02,
         include_false_positives=True,
         weight_false_positives=1.0,
+        weight_unmatched_peaks=1.0,
         progress_bar=True,
     ):
         """
@@ -899,6 +908,7 @@ class CrystalPhase:
                 strain_max=strain_max,
                 include_false_positives=include_false_positives,
                 weight_false_positives=weight_false_positives,
+                weight_unmatched_peaks=weight_unmatched_peaks,
                 plot_result=False,
                 verbose=False,
                 returnfig=False,
