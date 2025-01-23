@@ -327,16 +327,16 @@ class Tomography:
 
         self._cylinder_mask = cylinder_mask
 
-        # weights_diff_all = xp.array(self._weights_diff).flatten()
-        # ind_diff_all = xp.array(self._ind_diff).flatten()
-        # weights_diff_all_counted = xp.bincount(
-        #     ind_diff_all,
-        #     weights=weights_diff_all,
-        #     minlength=s[3]
-        #     * s[4]
-        #     * s[5],
-        # )
-        # self._weights_diff_all_counted = weights_diff_all_counted
+        weights_diff_all = xp.array(self._weights_diff).flatten()
+        ind_diff_all = xp.array(self._ind_diff).flatten()
+        weights_diff_all_counted = xp.bincount(
+            ind_diff_all,
+            weights=weights_diff_all,
+            minlength=s[3]
+            * s[4]
+            * s[5],
+        )
+        self._weights_diff_all_counted = weights_diff_all_counted
 
         # ind_real_all = xp.array(self._ind_real).flatten()
         # weights_real_all = xp.array(self._weights_real).flatten()
@@ -498,14 +498,14 @@ class Tomography:
         )
 
         update *= step_size
-        (x_index, yy, zz, update_r_summed) = self._back(
+        (x_index, i_real, i_diff, update_r_summed) = self._back(
             num_points=num_points,
             datacube_number=a1_shuffle,
             x_index=a2,
             update=update,
         )
 
-        return x_index, yy, zz, update_r_summed, error
+        return x_index, i_real, i_diff, update_r_summed, error
 
     def _prepare_datacube(
         self,
@@ -1005,7 +1005,7 @@ class Tomography:
         yy, zz = np.meshgrid(y, z, indexing="ij")
         sin = np.sin(tilt)
         cos = np.cos(tilt)
-        r = [[cos, -sin], [sin, cos]]
+        r = [[cos, sin], [-sin, cos]]
         points = np.array((yy.ravel(), zz.ravel())).T
         points = points @ r
         line_y = points[:, 0]
@@ -1455,14 +1455,14 @@ class Tomography:
         device = self._device
         obj = copy_to_device(self._object[x_index], device)
 
-        ind_real = self._ind_real[datacube_number]
+        ind_real = self._ind_real[datacube_number].reshape((4, s[1], s[2]))
         ind_diff = self._ind_diff[datacube_number]
-        weights_real = self._weights_real[datacube_number]
+        weights_real = self._weights_real[datacube_number].reshape((4, s[1], s[2]))
         weights_diff = self._weights_diff[datacube_number]
-        ind0 = self._ind0[datacube_number]
+        # ind0 = self._ind0[datacube_number].reshape((s[1],s[2]))
 
-        ind0[ind0 >= s[2]] = s[2] - 1
-        ind0[ind0 < 0] = 0
+        # ind0[ind0 >= s[2]] = s[2] - 1
+        # ind0[ind0 < 0] = 0
 
         # project
         # bincount_diff = (
@@ -1507,16 +1507,20 @@ class Tomography:
             minlength=s[1] * s[2] * self._q_length,
         ).reshape((-1, self._q_length))[:, self._circular_mask_bincount]
 
-        bincount_real = (
-            xp.tile(xp.arange(obj_q_summed.shape[1]), ind_real.shape[0])
-            + xp.repeat(ind0, obj_q_summed.shape[1]) * obj_q_summed.shape[1]
-        )
+        # bincount_real = (
+        #     xp.tile(xp.arange(obj_q_summed.shape[1]), ind_real.shape[0])
+        #     + xp.repeat(ind0, obj_q_summed.shape[1]) * obj_q_summed.shape[1]
+        # )
 
-        obj_projected = xp.bincount(
-            bincount_real,
-            (obj_q_summed[ind_real] * weights_real[:, None]).ravel(),
-            minlength=s[2] * obj_q_summed.shape[1],
-        ).reshape((s[2], obj_q_summed.shape[1]))
+        # obj_projected = xp.bincount(
+        #     bincount_real,
+        #     (obj_q_summed[ind_real] * weights_real[:, None]).ravel(),
+        #     minlength=s[2] * obj_q_summed.shape[1],
+        # ).reshape((s[2], obj_q_summed.shape[1]))
+
+        obj_projected = (obj_q_summed[ind_real] * weights_real[:, :, :, None]).sum(
+            (0, 1)
+        )
 
         return obj_projected
 
@@ -1681,12 +1685,10 @@ class Tomography:
             update_reshaped = (
                 ((xp.tile(xp.repeat(update, 2, axis=1) / normalize, (4)))[:, i])
                 * (self._weights_diff[datacube_number][ind_update])
-                / (4 * 2)
             )
 
         ind_real = self._ind_real[datacube_number].ravel()
         ind_diff = self._ind_diff[datacube_number][ind_update]
-        ind0 = self._ind0[datacube_number]
 
         ind_diff_bincount = xp.bincount(ind_diff)
         diff_max = ind_diff_bincount.shape[0]
@@ -1705,13 +1707,7 @@ class Tomography:
             minlength=((diff_max) * s[2]),
         ).reshape((s[2], -1))[:, ind_diff_bincount > 0]
 
-        ind0_repeats = xp.bincount(ind0)
-        ind0_order = xp.argsort(xp.argsort(ind0))
-
-        update_q_summed = (
-            xp.repeat(update_q_summed, ind0_repeats, axis=0)[ind0_order]
-            / ind0_repeats.mean()
-        )
+        update_q_summed = xp.tile(update_q_summed, (s[1] * 4, 1)) / (s[1])
 
         diff_shape_bin = update_q_summed.shape[-1]
 
@@ -1734,12 +1730,12 @@ class Tomography:
             )
         ).reshape((-1, diff_shape_bin))[ind_real_bincount > 0]
 
-        yy, zz = xp.meshgrid(xp.unique(ind_real), xp.unique(ind_diff), indexing="ij")
+        i_real, i_diff = xp.meshgrid(xp.unique(ind_real), xp.unique(ind_diff), indexing="ij")
 
-        yy = copy_to_device(yy, storage)
-        zz = copy_to_device(zz, storage)
+        i_real = copy_to_device(i_real, storage)
+        i_diff = copy_to_device(i_diff, storage)
 
-        return x_index, yy, zz, copy_to_device(update_r_summed, storage)
+        return x_index, i_real, i_diff, copy_to_device(update_r_summed, storage)
 
     def _constraints(
         self,
@@ -1935,6 +1931,7 @@ class Tomography:
         cyliner_mask=False,
         mode="dark-field",
         virtual_image_mask_radius=4,
+        **kwargs
     ):
         """ """
         from ipywidgets import HBox, VBox, widgets, interact, Dropdown, Label, Layout
@@ -1966,8 +1963,13 @@ class Tomography:
             ] = 0
             diffraction_kernel = -1 * diffraction_kernel + 1
 
+        vmin = kwargs.pop("vmin", None)
+        vmax = kwargs.pop("vmax", None)
+
         _, vmin, vmax = return_scaled_histogram_ordering(
             ((obj_6D) * diffraction_kernel[None, None, None, :, :]).mean((3, 4, 5)),
+            vmin = vmin,
+            vmax = vmax,
         )
 
         # %matplotlib ipympl
