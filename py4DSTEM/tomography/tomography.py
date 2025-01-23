@@ -313,21 +313,39 @@ class Tomography:
                 num_points=num_points,
             )
 
-        weights_all = xp.array(self._weights_diff).flatten()
-        ind_all = xp.array(self._ind_diff).flatten()
-        weights_diff_all_counted = xp.bincount(
-            ind_all,
-            weights=weights_all,
-            minlength=self._object_shape_6D[3]
-            * self._object_shape_6D[4]
-            * self._object_shape_6D[5],
-        )
+        s = self._object_shape_6D
+        cylinder_mask = np.zeros((s[0:3]))
+        x = np.arange(s[1])
+        y = np.arange(s[2])
+        xx, yy = np.meshgrid(x, y, indexing="ij")
+        center = (np.mean(x), np.mean(y))
+        cylinder_mask[
+            :,
+            (xx - center[0]) ** 2 + (yy - center[1]) ** 2
+            <= ((center[0] + center[1]) / 2) ** 2,
+        ] = 1
 
-        # weights_diff_all_counted = weights_diff_all_counted.reshape(
-        #     self._object_shape_6D[3:]
+        self._cylinder_mask = cylinder_mask
+
+        # weights_diff_all = xp.array(self._weights_diff).flatten()
+        # ind_diff_all = xp.array(self._ind_diff).flatten()
+        # weights_diff_all_counted = xp.bincount(
+        #     ind_diff_all,
+        #     weights=weights_diff_all,
+        #     minlength=s[3]
+        #     * s[4]
+        #     * s[5],
         # )
+        # self._weights_diff_all_counted = weights_diff_all_counted
 
-        self._weights_diff_all_counted = weights_diff_all_counted
+        # ind_real_all = xp.array(self._ind_real).flatten()
+        # weights_real_all = xp.array(self._weights_real).flatten()
+        # weights_real_all_counted = xp.bincount(
+        #     ind_real_all,
+        #     weights=weights_real_all,
+        #     minlength=s[1]*s[2]
+        # )
+        # self._weights_real_all_counted = weights_real_all_counted * cylinder_mask.mean(0).ravel()
 
         return self
 
@@ -339,7 +357,7 @@ class Tomography:
         step_size: float = 0.5,
         progress_bar: bool = True,
         zero_edges: bool = True,
-        baseline_thresh: float = 0.9,
+        baseline_thresh: float = None,
         diffraction_gaussian_filter: float = 0,
         distributed=False,
         num_jobs=None,
@@ -443,7 +461,7 @@ class Tomography:
                         error_iteration += error
 
                 else:
-                    raise ValueError(("distributed not implemented for put"))
+                    raise ValueError(("distributed not implemented for gpu"))
 
             self._constraints(
                 zero_edges=zero_edges,
@@ -982,87 +1000,38 @@ class Tomography:
         tilt = -np.deg2rad(tilt_deg)
 
         # solve for real space coordinates
-        line_z = np.linspace(0, 1, num_points) * (s[2] - 1)
-        line_y = line_z * np.tan(tilt)
-        line_y -= np.mean(line_y)
-        offset = np.arange(s[1], dtype="int")
+        y = np.arange(s[1])
+        z = np.arange(s[2])
+        yy, zz = np.meshgrid(y, z, indexing="ij")
+        sin = np.sin(tilt)
+        cos = np.cos(tilt)
+        r = [[cos, -sin], [sin, cos]]
+        points = np.array((yy.ravel(), zz.ravel())).T
+        points = points @ r
+        line_y = points[:, 0]
+        line_z = points[:, 1]
+        line_y -= np.mean(line_y) - s[1] / 2
+        line_z -= np.mean(line_z) - s[2] / 2
 
         yF = np.floor(line_y).astype("int")
         zF = np.floor(line_z).astype("int")
         dy = line_y - yF
         dz = line_z - zF
 
-        ind0 = np.hstack(
-            (
-                np.tile(yF, (s[1], 1)) + offset[:, None],
-                np.tile(yF + 1, (s[1], 1)) + offset[:, None],
-                np.tile(yF, (s[1], 1)) + offset[:, None],
-                np.tile(yF + 1, (s[1], 1)) + offset[:, None],
-            )
-        )
+        ind0 = np.hstack((yF, yF + 1, yF, yF + 1))
 
-        ind1 = np.hstack(
-            (
-                np.tile(zF, (s[1], 1)),
-                np.tile(zF, (s[1], 1)),
-                np.tile(zF + 1, (s[1], 1)),
-                np.tile(zF + 1, (s[1], 1)),
-            )
-        )
+        ind1 = np.hstack((zF, zF, zF + 1, zF + 1))
 
         weights_real = np.hstack(
             (
-                np.tile(((1 - dy) * (1 - dz)), (s[1], 1)),
-                np.tile(((dy) * (1 - dz)), (s[1], 1)),
-                np.tile(((1 - dy) * (dz)), (s[1], 1)),
-                np.tile(((dy) * (dz)), (s[1], 1)),
+                (1 - dy) * (1 - dz),
+                (dy) * (1 - dz),
+                (1 - dy) * (dz),
+                (dy) * (dz),
             )
         )
 
         ind_real = np.ravel_multi_index((ind0, ind1), (s[1], s[2]), mode="clip")
-
-        # solve for real space normalization
-        num_points_norm = s[2]
-        line_z_norm = np.linspace(0, 1, num_points_norm) * (s[2] - 1)
-        line_y_norm = line_z_norm * np.tan(tilt)
-        line_y_norm -= np.mean(line_y_norm)
-        offset = np.arange(s[1], dtype="int")
-
-        yF_norm = np.floor(line_y_norm).astype("int")
-        zF_norm = np.floor(line_z_norm).astype("int")
-        dy_norm = line_y_norm - yF_norm
-        dz_norm = line_z_norm - zF_norm
-
-        ind0_norm = np.hstack(
-            (
-                np.tile(yF_norm, (s[1], 1)) + offset[:, None],
-                np.tile(yF_norm + 1, (s[1], 1)) + offset[:, None],
-                np.tile(yF_norm, (s[1], 1)) + offset[:, None],
-                np.tile(yF_norm + 1, (s[1], 1)) + offset[:, None],
-            )
-        )
-
-        ind1_norm = np.hstack(
-            (
-                np.tile(zF_norm, (s[1], 1)),
-                np.tile(zF_norm, (s[1], 1)),
-                np.tile(zF_norm + 1, (s[1], 1)),
-                np.tile(zF_norm + 1, (s[1], 1)),
-            )
-        )
-
-        weights_real_norm = np.hstack(
-            (
-                np.tile(((1 - dy_norm) * (1 - dz_norm)), (s[1], 1)),
-                np.tile(((dy_norm) * (1 - dz_norm)), (s[1], 1)),
-                np.tile(((1 - dy_norm) * (dz_norm)), (s[1], 1)),
-                np.tile(((dy_norm) * (dz_norm)), (s[1], 1)),
-            )
-        )
-
-        ind_real_norm = np.ravel_multi_index(
-            (ind0_norm, ind1_norm), (s[1], s[2]), mode="clip"
-        )
 
         # solve for diffraction space coordinates
         length = s[-1] * np.cos(tilt)
@@ -1169,35 +1138,19 @@ class Tomography:
         )
 
         # normalization real space
-        bincount_real_max = np.max(ind_real.max()) + 1
+        bincount_real_max = s[0] * s[1] * s[2]
 
         ind_real_bincount_weight = np.bincount(
             ind_real.ravel(), weights_real.ravel(), minlength=bincount_real_max
         )
         ind_real_bincount = np.bincount(ind_real.ravel(), minlength=bincount_real_max)
 
-        ind_real_bincount_weight_norm = np.bincount(
-            ind_real_norm.ravel(),
-            weights_real_norm.ravel(),
-            minlength=bincount_real_max,
-        )
-        ind_real_bincount_norm = np.bincount(
-            ind_real_norm.ravel(), minlength=bincount_real_max
-        )
-
-        ind_real_bincount_weight_norm = ind_real_bincount_weight_norm[
-            ind_real_bincount > 0
-        ]
-        ind_real_bincount_norm = ind_real_bincount_norm[ind_real_bincount > 0]
-
         ind_real_bincount_weight = ind_real_bincount_weight[ind_real_bincount > 0]
         ind_real_bincount = ind_real_bincount[ind_real_bincount > 0]
 
         ind_real_bincount_weight[ind_real_bincount_weight == 0] = 1
 
-        correction_factor_real = (
-            ind_real_bincount_weight_norm / ind_real_bincount_weight
-        )
+        correction_factor_real = 1 / ind_real_bincount_weight
 
         correction_factor_real = np.repeat(correction_factor_real, ind_real_bincount)
         sorted_indicies = np.argsort(np.argsort(ind_real.ravel()))
@@ -1258,6 +1211,8 @@ class Tomography:
             self._weights_diff = []
             self._ind0_diff = []
             self._ind1_diff = []
+            self._ind0 = []
+            self._ind1 = []
             self._ind0_diff_norm = []
             self._ind1_diff_norm = []
             self._ind_diff_norm = []
@@ -1269,6 +1224,8 @@ class Tomography:
         self._weights_diff.append(xp.asarray(weights_diff))
         self._ind0_diff.append(xp.asarray(ind0_diff))
         self._ind1_diff.append(xp.asarray(ind1_diff))
+        self._ind0.append(xp.asarray(ind0))
+        self._ind1.append(xp.asarray(ind1))
         self._ind0_diff_norm.append(xp.asarray(ind0_diff_norm))
         self._ind1_diff_norm.append(xp.asarray(ind1_diff_norm))
         self._ind_diff_norm.append(xp.asarray(ind_diff_norm))
@@ -1502,30 +1459,64 @@ class Tomography:
         ind_diff = self._ind_diff[datacube_number]
         weights_real = self._weights_real[datacube_number]
         weights_diff = self._weights_diff[datacube_number]
+        ind0 = self._ind0[datacube_number]
+
+        ind0[ind0 >= s[2]] = s[2] - 1
+        ind0[ind0 < 0] = 0
 
         # project
-        bincount_x = (
+        # bincount_diff = (
+        #     xp.tile(
+        #         (xp.tile(self._ind_diffraction_ravel, 4)),
+        #         (s[1]),
+        #     )
+        #     + xp.repeat(xp.arange(s[1]), ind_diff.shape[0]) * self._q_length
+        # )
+
+        # bincount_real = (
+        #     xp.tile(xp.arange(obj.shape[1]), ind_real.shape[0])
+        #     + xp.repeat(ind0, obj.shape[1]) * obj.shape[1]
+        # )
+
+        # obj_projected = (
+        #     (
+        #         xp.bincount(
+        #             bincount_diff,
+        #             (
+        #                 xp.bincount(
+        #                     bincount_real,
+        #                     (obj[ind_real] * weights_real[:, None]).ravel(),
+        #                 ).reshape((-1, obj.shape[1]))[:, ind_diff]
+        #             ).ravel()
+        #             * xp.tile(weights_diff, s[1]).ravel(),
+        #             minlength=self._q_length * s[1],
+        #         ).reshape(s[1], self._q_length)[:, self._circular_mask_bincount]
+        #     )
+        # )
+        bincount_diff = (
             xp.tile(
                 (xp.tile(self._ind_diffraction_ravel, 4)),
-                (s[1]),
+                (s[1] * s[2]),
             )
-            + xp.repeat(xp.arange(s[1]), ind_diff.shape[0]) * self._q_length
+            + xp.repeat(xp.arange(s[1] * s[2]), ind_diff.shape[0]) * self._q_length
         )
 
-        obj_projected = (
-            (
-                xp.bincount(
-                    bincount_x,
-                    (
-                        (obj[ind_real] * weights_real[:, :, None]).mean(1)[:, ind_diff]
-                    ).ravel()
-                    * xp.tile(weights_diff, s[1]).ravel(),
-                    minlength=self._q_length * s[1],
-                ).reshape(s[1], self._q_length)[:, self._circular_mask_bincount]
-            )
-            * s[2]
-            * 4
+        obj_q_summed = xp.bincount(
+            bincount_diff,
+            (obj[:, ind_diff] * weights_diff[None, :]).ravel(),
+            minlength=s[1] * s[2] * self._q_length,
+        ).reshape((-1, self._q_length))[:, self._circular_mask_bincount]
+
+        bincount_real = (
+            xp.tile(xp.arange(obj_q_summed.shape[1]), ind_real.shape[0])
+            + xp.repeat(ind0, obj_q_summed.shape[1]) * obj_q_summed.shape[1]
         )
+
+        obj_projected = xp.bincount(
+            bincount_real,
+            (obj_q_summed[ind_real] * weights_real[:, None]).ravel(),
+            minlength=s[2] * obj_q_summed.shape[1],
+        ).reshape((s[2], obj_q_summed.shape[1]))
 
         return obj_projected
 
@@ -1679,63 +1670,53 @@ class Tomography:
             normalize = xp.ones((xp.repeat(update, 2, axis=1)[:, 1:]).shape) * 2
             normalize[:, 0] = 1
 
-            update_reshaped = xp.repeat(
-                (
-                    (xp.tile(xp.repeat(update, 2, axis=1)[:, 1:] / normalize, (4)))[
-                        :, i
-                    ]
-                    * (self._weights_diff[datacube_number][ind_update])
-                ),
-                4 * num_points,
-                axis=0,
-            ) / (num_points)
+            update_reshaped = (
+                ((xp.tile(xp.repeat(update, 2, axis=1)[:, 1:] / normalize, 4))[:, i])
+                * (self._weights_diff[datacube_number][ind_update])
+                / (4 * 2)
+            )
         else:
             normalize = xp.ones((xp.repeat(update, 2, axis=1)).shape) * 2
 
-            update_reshaped = xp.repeat(
-                (
-                    (xp.tile(xp.repeat(update, 2, axis=1) / normalize, (4)))[:, i]
-                    * (self._weights_diff[datacube_number][ind_update])
-                ),
-                4 * num_points,
-                axis=0,
-            ) / (num_points)
+            update_reshaped = (
+                ((xp.tile(xp.repeat(update, 2, axis=1) / normalize, (4)))[:, i])
+                * (self._weights_diff[datacube_number][ind_update])
+                / (4 * 2)
+            )
 
         ind_real = self._ind_real[datacube_number].ravel()
+        ind_diff = self._ind_diff[datacube_number][ind_update]
+        ind0 = self._ind0[datacube_number]
 
-        diff_index = self._ind_diff[datacube_number][ind_update]
-
-        diff_bincount = xp.bincount(diff_index)
-        diff_max = diff_bincount.shape[0]
+        ind_diff_bincount = xp.bincount(ind_diff)
+        diff_max = ind_diff_bincount.shape[0]
 
         real_shape = ind_real.shape[0]
-        diff_shape = diff_index.shape[0]
+        diff_shape = ind_diff.shape[0]
 
         bincount_diff = (
-            xp.tile(diff_index, real_shape)
-            + (xp.repeat(xp.arange(real_shape), diff_shape)) * diff_max
+            xp.tile(ind_diff, s[2])
+            + (xp.repeat(xp.arange(s[2]), diff_shape)) * diff_max
         )
 
         update_q_summed = xp.bincount(
             bincount_diff,
             update_reshaped.ravel(),
-            minlength=((diff_max) * real_shape),
-        ).reshape((real_shape, -1))[:, diff_bincount > 0]
+            minlength=((diff_max) * s[2]),
+        ).reshape((s[2], -1))[:, ind_diff_bincount > 0]
 
-        correction_factor = self._weights_diff_all_counted[np.unique(diff_index)]
-        correction_factor[correction_factor ==0 ] = 1
-        # from pdb import set_trace
-        # set_trace()
+        ind0_repeats = xp.bincount(ind0)
+        ind0_order = xp.argsort(xp.argsort(ind0))
 
-        update_q_summed /= correction_factor
-        # print(correction_factor.max(), correction_factor.min())
+        update_q_summed = (
+            xp.repeat(update_q_summed, ind0_repeats, axis=0)[ind0_order]
+            / ind0_repeats.mean()
+        )
 
         diff_shape_bin = update_q_summed.shape[-1]
 
         ind_real_bincount = xp.bincount(ind_real)
         real_max = ind_real_bincount.shape[0]
-        # normalization_factor = np.ones(ind_real_bincount.shape)
-        # normalization_factor[ind_real_bincount>4] = 4/ind_real_bincount[ind_real_bincount>4]
 
         bincount_real = (
             xp.tile(xp.arange(diff_shape_bin), real_shape)
@@ -1753,12 +1734,11 @@ class Tomography:
             )
         ).reshape((-1, diff_shape_bin))[ind_real_bincount > 0]
 
-        yy, zz = xp.meshgrid(xp.unique(ind_real), xp.unique(diff_index), indexing="ij")
+        yy, zz = xp.meshgrid(xp.unique(ind_real), xp.unique(ind_diff), indexing="ij")
 
         yy = copy_to_device(yy, storage)
         zz = copy_to_device(zz, storage)
 
-        # self._object[x_index, yy, zz] += copy_to_device(update_r_summed, storage)
         return x_index, yy, zz, copy_to_device(update_r_summed, storage)
 
     def _constraints(
@@ -1966,16 +1946,7 @@ class Tomography:
         obj_6D /= obj_6D.mean()
 
         if cyliner_mask:
-            cylinder_mask = np.zeros((obj_6D.shape[0:3]))
-            x = np.arange(obj_6D.shape[0])
-            y = np.arange(obj_6D.shape[0])
-            xx, yy = np.meshgrid(x, y, indexing="ij")
-            center = (np.mean(x), np.mean(y))
-            cylinder_mask[
-                :,
-                (xx - center[0]) ** 2 + (yy - center[1]) ** 2
-                <= ((center[0] + center[1]) / 2) ** 2,
-            ] = 1
+            cylinder_mask = self._cylinder_mask
             obj_6D *= cyliner_mask[:, :, :, None, None, None]
 
         diffraction_kernel = np.ones((obj_6D.shape[3:]))
