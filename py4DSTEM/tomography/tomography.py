@@ -1000,7 +1000,7 @@ class Tomography:
         # solve for real space coordinates
         y = np.arange(s[1])
         z = np.arange(s[2])
-        yy, zz = np.meshgrid(y, z, indexing="ij")
+        yy, zz = np.meshgrid(y, z)
         sin = np.sin(tilt)
         cos = np.cos(tilt)
         r = [[cos, sin], [-sin, cos]]
@@ -1008,8 +1008,8 @@ class Tomography:
         points = points @ r
         line_y = points[:, 0]
         line_z = points[:, 1]
-        line_y -= np.mean(line_y) - s[1] / 2
-        line_z -= np.mean(line_z) - s[2] / 2
+        line_y -= np.mean(line_y) - (s[1] - 1) / 2
+        line_z -= np.mean(line_z) - (s[2] - 1) / 2
 
         yF = np.floor(line_y).astype("int")
         zF = np.floor(line_z).astype("int")
@@ -1034,8 +1034,8 @@ class Tomography:
         # solve for diffraction space coordinates
         line_y_diff = np.arange(s[-1]) * np.cos(tilt)
         line_z_diff = np.arange(s[-1]) * np.sin(tilt)
-        line_y_diff -= np.mean(line_y_diff) - s[-1] / 2
-        line_z_diff -= np.mean(line_z_diff) - s[-1] / 2
+        line_y_diff -= np.mean(line_y_diff) - (s[-1] - 1) / 2
+        line_z_diff -= np.mean(line_z_diff) - (s[-1] - 1) / 2
 
         yF_diff = np.floor(line_y_diff).astype("int")
         zF_diff = np.floor(line_z_diff).astype("int")
@@ -1346,7 +1346,7 @@ class Tomography:
         ).reshape((-1, self._q_length))[:, self._circular_mask_bincount]
 
         obj_projected = (obj_q_summed[ind_real] * weights_real[:, :, :, None]).sum(
-            (0, 1)
+            (0, 2)
         )
 
         return obj_projected
@@ -1521,17 +1521,17 @@ class Tomography:
         diff_shape = ind_diff.shape[0]
 
         bincount_diff = (
-            xp.tile(ind_diff, s[2])
-            + (xp.repeat(xp.arange(s[2]), diff_shape)) * diff_max
+            xp.tile(ind_diff, s[1])
+            + (xp.repeat(xp.arange(s[1]), diff_shape)) * diff_max
         )
 
         update_q_summed = xp.bincount(
             bincount_diff,
             update_reshaped.ravel(),
-            minlength=((diff_max) * s[2]),
-        ).reshape((s[2], -1))[:, ind_diff_bincount > 0]
+            minlength=((diff_max) * s[1]),
+        ).reshape((s[1], -1))[:, ind_diff_bincount > 0]
 
-        update_q_summed = xp.tile(update_q_summed, (s[1] * 4, 1)) / (s[1])
+        update_q_summed = xp.tile(update_q_summed, (s[2] * 4, 1)) / (s[2])
 
         diff_shape_bin = update_q_summed.shape[-1]
 
