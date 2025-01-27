@@ -405,6 +405,13 @@ class Tomography:
 
             num_points = self._num_points
 
+            if distributed is True and self._device == "cpu":
+                num_jobs = num_jobs or cpu_count() // threads_per_job
+
+                def f(args):
+                    with threadpool_limits(limits=threads_per_job):
+                        return self._reconstruct(**args)
+
             for a1 in range(self._num_datacubes):
                 a1_shuffle = random_tilt_order[a1]
                 diffraction_patterns_projected = copy_to_device(
@@ -425,12 +432,6 @@ class Tomography:
                         self._object[x_index, yy, zz] += update_r_summed
 
                 elif distributed is True and self._device == "cpu":
-                    num_jobs = num_jobs or cpu_count() // threads_per_job
-
-                    def f(args):
-                        with threadpool_limits(limits=threads_per_job):
-                            return self._reconstruct(**args)
-
                     inputs = [
                         (
                             {
@@ -454,9 +455,10 @@ class Tomography:
                         )
 
                     for a2 in range(self._object_shape_6D[0]):
-                        x_index, yy, zz, update_r_summed, error = results[a2]
-                        self._object[x_index, yy, zz] += update_r_summed
-                        error_iteration += error
+                        self._object[
+                            results[a2][0], results[a2][1], results[a2][2]
+                        ] += results[a2][3]
+                        error_iteration += results[a2][4]
 
                 else:
                     raise ValueError(("distributed not implemented for gpu"))
