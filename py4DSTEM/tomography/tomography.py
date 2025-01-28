@@ -1355,8 +1355,6 @@ class Tomography:
         weights_real = self._weights_real[datacube_number].reshape((4, s[1], s[2]))
         weights_diff = self._weights_diff[datacube_number].reshape((4, s[-1], s[-1]))
 
-        xp = np
-
         obj_q_summed = (obj[:, ind_diff] * weights_diff).sum((1))
         bincount_diff = (
             xp.tile(
