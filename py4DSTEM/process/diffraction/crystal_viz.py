@@ -166,7 +166,7 @@ def plot_structure(
         # init
         tol = 1e-4
         num_seg = 180
-        radius = size_marker/800 
+        radius = size_marker / 800
         zp = np.zeros(num_seg + 1)
 
         mark = np.ones(xyz.shape[0], dtype="bool")
