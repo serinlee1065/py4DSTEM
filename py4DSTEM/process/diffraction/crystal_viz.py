@@ -34,7 +34,7 @@ def plot_structure(
     returnfig: bool = False,
 ):
     """
-    Quick 3D plot of the untit cell /atomic structure.
+    Quick 3D plot of the unit cell/atomic structure.
 
     Args:
         orientation_matrix (array):  (3,3) orientation matrix, where columns represent projection directions.
@@ -42,7 +42,7 @@ def plot_structure(
         proj_x_lattice (array):       (3,) x-axis direction in lattice indices
         zone_axis_cartesian (array): (3,) cartesian projection direction
         proj_x_cartesian (array):    (3,) cartesian projection direction
-        scale_markers (float):       Size scaling for markers
+        size_marker (float):         Size scaling for markers
         tol_distance (float):        Tolerance for repeating atoms on edges on cell boundaries.
         plot_limit (float):          (2,3) numpy array containing x y z plot min and max in columns.
                                      Default is 1.1* unit cell dimensions.
@@ -166,7 +166,7 @@ def plot_structure(
         # init
         tol = 1e-4
         num_seg = 180
-        radius = 0.7
+        radius = size_marker/800 
         zp = np.zeros(num_seg + 1)
 
         mark = np.ones(xyz.shape[0], dtype="bool")
