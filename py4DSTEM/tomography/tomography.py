@@ -351,6 +351,7 @@ class Tomography:
         self,
         num_iter: int = 1,
         store_iterations: bool = False,
+        store_initial_object: bool = True,
         reset: bool = True,
         step_size: float = 0.5,
         progress_bar: bool = True,
@@ -370,6 +371,8 @@ class Tomography:
             Number of iterations
         store_iterations: bool
             if True, stores number of iterations
+        store_initial_object: bool
+            if True, keeps a copy of an initial object to reset without preprocessing
         reset: bool
             if True, resets object
         step_size: float
@@ -391,7 +394,10 @@ class Tomography:
             if store_iterations:
                 self.object_iterations = []
 
-            self._object = self._object_initial.copy()
+            if store_initial_object: 
+                self._object = self._object_initial.copy()
+            else:
+                self._object = self._object_initial
 
         for a0 in tqdmnd(
             num_iter,
@@ -1770,8 +1776,7 @@ class Tomography:
     @property
     def object_6D(self):
         """6D object"""
-
-        return self._object.reshape(self._object_shape_6D)
+        return copy_to_device(self._object.reshape(self._object_shape_6D), "cpu")
 
     def recovered_4D_scan(self, index):
         """recovered 4D-STEM scan from projected patterns"""
