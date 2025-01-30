@@ -1829,7 +1829,7 @@ class Tomography:
         vmax = kwargs.pop("vmax", None)
 
         _, vmin, vmax = return_scaled_histogram_ordering(
-            ((obj_6D) * diffraction_kernel[None, None, None, :, :]).mean((3, 4, 5)),
+            ((obj_6D) * diffraction_kernel[None, None, None, :, :, :]).mean((3, 4, 5)),
             vmin=vmin,
             vmax=vmax,
         )
@@ -1849,7 +1849,7 @@ class Tomography:
         min_distance = 1
 
         ax0.imshow(
-            (obj_6D[:, :, z] * diffraction_kernel[None, None, :, :]).mean((2, 3, 4)),
+            (obj_6D[:, :, z] * diffraction_kernel[None, None, :, :, :]).mean((2, 3, 4)),
             cmap="gray",
             vmin=vmin,
             vmax=vmax,
@@ -1863,7 +1863,7 @@ class Tomography:
                     y,
                     :,
                 ]
-                * diffraction_kernel[None, None, :, :]
+                * diffraction_kernel[None, None, :, :, :]
             )
             .mean((2, 3, 4))
             .T,
@@ -1902,6 +1902,12 @@ class Tomography:
         ax2.set_yticks([])
         ax2.set_zticks([])
 
+        ax0.set_xlabel('y')
+        ax0.set_ylabel('x')
+
+        ax1.set_xlabel('x')
+        ax1.set_ylabel('z')
+
         ax2.set_xlim([0, obj_6D.shape[3]])
         ax2.set_ylim([0, obj_6D.shape[4]])
         ax2.set_zlim([0, obj_6D.shape[5]])
@@ -1929,7 +1935,7 @@ class Tomography:
                         :,
                         z,
                     ]
-                    * diffraction_kernel[None, None, :, :]
+                    * diffraction_kernel[None, None, :, :, :]
                 ).mean((2, 3, 4)),
                 cmap="gray",
                 vmin=vmin,
@@ -1945,7 +1951,7 @@ class Tomography:
                         y,
                         :,
                     ]
-                    * diffraction_kernel[None, None, :, :]
+                    * diffraction_kernel[None, None, :, :, :]
                 )
                 .mean((2, 3, 4))
                 .T,
@@ -1984,6 +1990,12 @@ class Tomography:
             ax1.set_yticks([])
             ax2.set_yticks([])
             ax2.set_zticks([])
+
+            ax0.set_xlabel('y')
+            ax0.set_ylabel('x')
+
+            ax1.set_xlabel('x')
+            ax1.set_ylabel('z')
 
             ax2.set_xlim([0, obj_6D.shape[3]])
             ax2.set_ylim([0, obj_6D.shape[4]])
