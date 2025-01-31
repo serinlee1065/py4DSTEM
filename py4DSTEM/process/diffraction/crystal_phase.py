@@ -1230,6 +1230,7 @@ class CrystalPhase:
         self,
         use_correlation_scores=False,
         reliability_range=(0.0, 1.0),
+        normalize_exp_intensity = True,
         sigma=0.0,
         phase_colors=None,
         ticks=True,
@@ -1314,6 +1315,11 @@ class CrystalPhase:
                 )
         self.phase_sig = phase_sig
 
+        # # normalize the signal by the intensity of each experimental pattern
+        # if normalize_exp_intensity:
+        #     phase_sig /= self.int_total[None,:,:]
+
+
         # find highest correlation score for each crystal and match index
         for a0 in range(self.num_crystals):
             sub = phase_sig[a0] > phase_corr
@@ -1338,6 +1344,12 @@ class CrystalPhase:
 
             # Estimate the reliability
             phase_rel = phase_corr - phase_corr_2nd
+
+            # normalize the reliability by the intensity of each experimental pattern
+            if normalize_exp_intensity:
+                phase_rel /= self.int_total
+
+
             phase_scale = np.clip(
                 (phase_rel - reliability_range[0])
                 / (reliability_range[1] - reliability_range[0]),
@@ -1362,6 +1374,8 @@ class CrystalPhase:
             sub = phase_map == a0
             for a1 in range(3):
                 self.phase_rgb[:, :, a1][sub] = phase_colors[a0, a1] * phase_scale[sub]
+
+        self.phase_scale = phase_scale
         # normalize
         # self.phase_rgb = np.clip(
         #     (self.phase_rgb - rel_range[0]) / (rel_range[1] - rel_range[0]),
