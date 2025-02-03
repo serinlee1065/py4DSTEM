@@ -150,7 +150,7 @@ def plot_structure(
 
     # atoms
     ID_all = np.unique(ID)
-    if occ is None:
+    if np.all(np.asarray(occ) == 1):
         for ID_plot in ID_all:
             sub = ID == ID_plot
             ax.scatter(
