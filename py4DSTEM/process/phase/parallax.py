@@ -1152,6 +1152,7 @@ class Parallax(PhaseReconstruction):
         device: str = None,
         clear_fft_cache: bool = None,
         max_batch_size: int = None,
+        return_fig: bool = False,
         **kwargs,
     ):
         """
@@ -1185,11 +1186,13 @@ class Parallax(PhaseReconstruction):
         reset: bool, optional
             If True, the reconstruction is reset
         device: str, optional
-            if not none, overwrites self._device to set device preprocess will be perfomed on.
+            If not None, overwrites self._device to set device preprocess will be perfomed on.
         max_batch_size: int, optional
             Max number of virtual BF images to use at once in computing cross-correlation
         clear_fft_cache: bool, optional
-            if true, and device = 'gpu', clears the cached fft plan at the end of function calls
+            If True, and device = 'gpu', clears the cached fft plan at the end of function calls
+        return_fig: bool, optional
+            If True, returns figure
 
         Returns
         --------
@@ -1465,7 +1468,10 @@ class Parallax(PhaseReconstruction):
 
         self.clear_device_mem(self._device, self._clear_fft_cache)
 
-        return self
+        if return_fig and plot_aligned_bf:
+            return self, fig
+        else:
+            return self
 
     def subpixel_alignment(
         self,
