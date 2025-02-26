@@ -336,14 +336,25 @@ class Tomography:
         )
         self._weights_diff_all_counted = weights_diff_all_counted
 
-        # ind_real_all = xp.array(self._ind_real).flatten()
-        # weights_real_all = xp.array(self._weights_real).flatten()
-        # weights_real_all_counted = xp.bincount(
-        #     ind_real_all,
-        #     weights=weights_real_all,
-        #     minlength=s[1]*s[2]
-        # )
-        # self._weights_real_all_counted = weights_real_all_counted * cylinder_mask.mean(0).ravel()
+        center = (
+            (self._object_shape_6D[3] - 1) / 2,
+            (self._object_shape_6D[4] - 1) / 2,
+            (self._object_shape_6D[5] - 1) / 2,
+        )
+
+        qx = np.arange(self._object_shape_6D[3])
+        qy = np.arange(self._object_shape_6D[4])
+        qz = np.arange(self._object_shape_6D[5])
+
+        qxx, qyy, qzz = np.meshgrid(qx, qy, qz)
+
+        diffraction_edge_mask = (qxx - center[0]) ** 2 + (qyy - center[1]) ** 2 + (
+            qzz - center[2]
+        ) ** 2 <= center[0] ** 2
+        diffraction_edge_mask = diffraction_edge_mask.ravel()
+        diffraction_edge_mask = np.array(diffraction_edge_mask, dtype="int")
+
+        self._diffraction_edge_mask = diffraction_edge_mask
 
         return self
 
@@ -355,7 +366,9 @@ class Tomography:
         reset: bool = True,
         step_size: float = 0.5,
         progress_bar: bool = True,
-        zero_edges: bool = True,
+        zero_edges_real: bool = True,
+        zero_edges_diffraction: bool = True,
+        cylinder_mask: bool = True,
         baseline_thresh: float = None,
         diffraction_gaussian_filter: float = 0,
         distributed=False,
@@ -379,8 +392,12 @@ class Tomography:
             from 0 to 1, step size for update
         progres_bar: bool
             if True, shows progress bar
-        zero_edges: bool
-            If True, zero edges along y and z
+        zero_edges_real: bool
+            If True, zeros edges along y and z
+        zero_edges_diffraction: bool
+            If True, zeros diffraction edges with spherical mask
+        cylinderical_mask: bool
+            If True, applies cylinderical mask
         baseline_thresh: float
             If not None, data is cropped below threshold. Value is percentile of object.
         diffraction_gaussian_filter: float
@@ -394,7 +411,7 @@ class Tomography:
             if store_iterations:
                 self.object_iterations = []
 
-            if store_initial_object: 
+            if store_initial_object:
                 self._object = self._object_initial.copy()
             else:
                 self._object = self._object_initial
@@ -470,7 +487,9 @@ class Tomography:
                     raise ValueError(("distributed not implemented for gpu"))
 
             self._constraints(
-                zero_edges=zero_edges,
+                zero_edges_real=zero_edges_real,
+                zero_edges_diffraction=zero_edges_diffraction,
+                cylinder_mask=cylinder_mask,
                 baseline_thresh=baseline_thresh,
                 diffraction_gaussian_filter=diffraction_gaussian_filter,
             )
@@ -1602,7 +1621,9 @@ class Tomography:
 
     def _constraints(
         self,
-        zero_edges: bool,
+        zero_edges_real: bool,
+        zero_edges_diffraction: bool,
+        cylinder_mask: bool,
         baseline_thresh: float,
         diffraction_gaussian_filter: float,
     ):
@@ -1612,14 +1633,18 @@ class Tomography:
 
         Parameters
         ----------
-        zero_edges: bool
-            If True, zero edges along y and z
+        zero_edges_real: bool
+            If True, zeros edges along y and z
+        zero_edges_diffraction: bool
+            If True, zeros diffraction edges with spherical mask
+        cylinderical_mask: bool
+            If True, applies cylinderical mask
         baseline_thresh: float
             If not None, data is cropped below threshold.  Value is percentile of object.
         diffraction_gaussian_filter: float
             Gaussian filter sigma for diffraction space (in pixels)
         """
-        if zero_edges:
+        if zero_edges_real:
             xp = self._xp_storage
             s = self._object_shape_6D
             y = xp.arange(s[1])
@@ -1633,6 +1658,11 @@ class Tomography:
             )[0]
             self._object[:, ind_zero] = 0
 
+        if zero_edges_diffraction:
+            storage = self._storage
+            diffraction_edge_mask = copy_to_device(self._diffraction_edge_mask, storage)
+            self._object = self._object * diffraction_edge_mask[None, None, :]
+
         if baseline_thresh is not None:
             _, vmin, _ = return_scaled_histogram_ordering(
                 self._object, vmin=baseline_thresh
@@ -1641,19 +1671,25 @@ class Tomography:
             self._object = xp.clip(self._object - vmin, 0, np.inf)
 
         if diffraction_gaussian_filter > 0:
-            if self._storage == "cpu":
+            if self._device == "cpu":
                 from scipy.ndimage import gaussian_filter
+
+                device = "cpu"
             else:
                 from cp.scipy.ndimage import gaussian_filter
 
+                device = "gpu"
+
+            storage = self._storage
             s = self._object.shape
 
-            obj_6D = self.object_6D
+            obj_6D = copy_to_device(self.object_6D, device=device)
+
             obj_6D = gaussian_filter(
                 obj_6D, diffraction_gaussian_filter, axes=(-1, -2, -3)
             )
 
-            self._object = obj_6D.reshape(s)
+            self._object = copy_to_device(obj_6D.reshape(s), device=storage)
 
     def set_storage(self, storage):
         """
@@ -1846,7 +1882,7 @@ class Tomography:
         y = obj_6D.shape[1] // 2
         z = obj_6D.shape[2] // 2
         gaussian_filter_sigma = 1.5
-        min_distance = 1
+        min_distance = 2
 
         ax0.imshow(
             (obj_6D[:, :, z] * diffraction_kernel[None, None, :, :, :]).mean((2, 3, 4)),
@@ -1902,11 +1938,11 @@ class Tomography:
         ax2.set_yticks([])
         ax2.set_zticks([])
 
-        ax0.set_xlabel('y')
-        ax0.set_ylabel('x')
+        ax0.set_xlabel("y")
+        ax0.set_ylabel("x")
 
-        ax1.set_xlabel('x')
-        ax1.set_ylabel('z')
+        ax1.set_xlabel("x")
+        ax1.set_ylabel("z")
 
         ax2.set_xlim([0, obj_6D.shape[3]])
         ax2.set_ylim([0, obj_6D.shape[4]])
@@ -1991,11 +2027,11 @@ class Tomography:
             ax2.set_yticks([])
             ax2.set_zticks([])
 
-            ax0.set_xlabel('y')
-            ax0.set_ylabel('x')
+            ax0.set_xlabel("y")
+            ax0.set_ylabel("x")
 
-            ax1.set_xlabel('x')
-            ax1.set_ylabel('z')
+            ax1.set_xlabel("x")
+            ax1.set_ylabel("z")
 
             ax2.set_xlim([0, obj_6D.shape[3]])
             ax2.set_ylim([0, obj_6D.shape[4]])
