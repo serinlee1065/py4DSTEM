@@ -1647,7 +1647,16 @@ class Tomography:
         diffraction_gaussian_filter: float
             Gaussian filter sigma for diffraction space (in pixels)
         """
-        if zero_edges_real:
+        if cylinder_mask:
+            device = self._device
+            s = self._object_shape_6D
+            self._object = self._object * (
+                copy_to_device(
+                    self._cylinder_mask.reshape((s[0], s[1] * s[2])), device
+                )[:, :, None]
+            )
+
+        elif zero_edges_real:
             xp = self._xp_storage
             s = self._object_shape_6D
             y = xp.arange(s[1])
@@ -1798,7 +1807,7 @@ class Tomography:
         ax = fig.add_subplot(spec[0, 1])
         ind_diff = self._object_shape_6D[-1] // 2
         show(
-            self.object_6D.mean((0, 1, 2))[:, :, ind_diff],
+            self.object_6D.mean((0, 1, 2, 5)),
             figax=(fig, ax),
             cmap="magma",
             title="diffraction space object",
