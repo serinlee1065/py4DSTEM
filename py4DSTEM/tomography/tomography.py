@@ -63,38 +63,38 @@ class Tomography:
         Parameters
         ----------
         datacubes:List of `DataCube`s of list of strings
-            List of py4DSTEM `DataCube`s or strings for where to load the data from
+            list of py4DSTEM `DataCube`s or strings for where to load the data from
         import_kwargs: dict
-            Arguments to pass to `read` or `import_file` if passes a string for datacubes
+            arguments to pass to `read` or `import_file` if passes a string for datacubes
         object_shape_x_y_z: 3-tuple
-            Shape (in voxels) of the 3D object to be reconstructed
+            shape (in voxels) of the 3D object to be reconstructed
         voxel_size_A: float
-            Size of each voxel in object. Voxel size is uniform in x, y, and z
+            size of each voxel in object. Voxel size is uniform in x, y, and z
         datacube_R_pixel_size_A: float
-            Step size (in A) for datacube
+            step size (in A) for datacube
         datacube_Q_pixel_size_inv_A: float
-            Step size (in A^-1) for datacube
+            step size (in A^-1) for datacube
         tilt_deg: np.ndarray or list
-            List of tilt angles for datacubes
+            list of tilt angles for datacubes
         shift_px:
-            List of x, y shifts for each scan. If transpose_xy is True, these are also transposed
+            list of x, y shifts for each scan. If transpose_xy is True, these are also transposed
         tilt_rotation_axis_angle_deg: float
-            Rotation angle of scan direction to tilt axis
+            rotation angle of scan direction to tilt axis
         tilt_rotation_axis_shift_px: float
-            Shift of centering of datacubes so that the axis is centered in the object
+            shift of centering of datacubes so that the axis is centered in the object
             (in number of datacube pixels)
         transpose_xy: bool
-            If True, swaps x and y
+            if True, swaps x and y
         initial_object_guess: np.ndarray
-            Initial guess for object
+            initial guess for object
         verbose: bool
             if False, supresses output messages
         device: str, optional
-            Device calculation will be perfomed on. Must be 'cpu' or 'gpu'
+            device calculation will be perfomed on. Must be 'cpu' or 'gpu'
         storage: str, optional
-            Device non-frequent arrays will be stored on. Must be 'cpu' or 'gpu'
+            device non-frequent arrays will be stored on. Must be 'cpu' or 'gpu'
         clear_fft_cache: bool, optional (TODO, not yet implemented)
-            If True, and device = 'gpu', clears the cached fft plan at the end of function calls
+            if True, and device = 'gpu', clears the cached fft plan at the end of function calls
 
         Other notes for users:
             - the tilt axis is along y
@@ -177,13 +177,13 @@ class Tomography:
             arrays are returned for qx0,qy0
         force_q_to_r_rotation_deg:float
             force q to r rotation in degrees
-            If `tilt_rotation_axis_angle_deg` is not None, this angle is added
+            if `tilt_rotation_axis_angle_deg` is not None, this angle is added
         force_q_to_r_transpose: bool
             force q to r transpose
         fitfunction: "str"
             fit function for origin ('plane' or 'parabola' or 'bezier_two' or 'constant').
         robust: bool
-            If set to True, origin fit will be repeated with outliers
+            if set to True, origin fit will be repeated with outliers
             removed.
         robust_steps: int
             number of robust iterations performed after initial fit.
@@ -393,13 +393,13 @@ class Tomography:
         progres_bar: bool
             if True, shows progress bar
         zero_edges_real: bool
-            If True, zeros edges along y and z
+            if True, zeros edges along y and z
         zero_edges_diffraction: bool
-            If True, zeros diffraction edges with spherical mask
+            if True, zeros diffraction edges with spherical mask
         cylinderical_mask: bool
-            If True, applies cylinderical mask
+            if True, applies cylinderical mask
         baseline_thresh: float
-            If not None, data is cropped below threshold. Value is percentile of object.
+            if not None, data is cropped below threshold. Value is percentile of object.
         diffraction_gaussian_filter: float
             Gaussian filter sigma for diffraction space (in pixels)
         """
@@ -829,8 +829,6 @@ class Tomography:
 
         return mask_real_space
 
-    # def _solve_for_center_of_mass_relative_rotation():
-
     def _solve_for_diffraction_pattern_centering(
         self,
         datacube,
@@ -860,7 +858,7 @@ class Tomography:
         fitfunction: "str"
             fit function for origin ('plane' or 'parabola' or 'bezier_two' or 'constant').
         robust: bool
-            If set to True, origin fit will be repeated with outliers
+            if set to True, origin fit will be repeated with outliers
             removed.
         robust_steps: int
             number of robust iterations performed after initial fit.
@@ -1609,6 +1607,11 @@ class Tomography:
                 minlength=((real_max) * diff_shape_bin),
             )
         ).reshape((-1, diff_shape_bin))[ind_real_bincount > 0]
+
+        weights_diff_all_counted = self._weights_diff_all_counted
+        weights_diff_all_counted = weights_diff_all_counted[xp.unique(ind_diff)]
+        weights_diff_all_counted[weights_diff_all_counted < 1] = 1
+        update_r_summed[None, :] = update_r_summed[None, :] / weights_diff_all_counted
 
         i_real, i_diff = xp.meshgrid(
             xp.unique(ind_real), xp.unique(ind_diff), indexing="ij"
