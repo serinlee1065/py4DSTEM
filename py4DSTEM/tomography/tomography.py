@@ -1648,11 +1648,11 @@ class Tomography:
             Gaussian filter sigma for diffraction space (in pixels)
         """
         if cylinder_mask:
-            device = self._device
+            storage = self._storage
             s = self._object_shape_6D
             self._object = self._object * (
                 copy_to_device(
-                    self._cylinder_mask.reshape((s[0], s[1] * s[2])), device
+                    self._cylinder_mask.reshape((s[0], s[1] * s[2])), storage
                 )[:, :, None]
             )
 
