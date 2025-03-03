@@ -578,7 +578,6 @@ class Probe(DiffractionSlice, Data):
         # Get CoM
         if origin is None:
             from py4DSTEM.process.calibration import get_probe_size
-
             _, xCoM, yCoM = get_probe_size(probe)
         else:
             xCoM, yCoM = origin
