@@ -1,6 +1,6 @@
 """
 A general note on all these functions is that they are designed for use with rotation calibration into the pointslist.
-However, they have to date only been used with the Qx and Qy in pixels and not calibrated into reciprocal units.  
+However, they have to date only been used with the Qx and Qy in pixels and not calibrated into reciprocal units.
 There is no reason why this should not work, but the default tolerance would need adjustment.
 """
 
