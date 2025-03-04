@@ -607,64 +607,62 @@ class DataCube(
 
         # show
         if plot:
-            fig,axs = plt.subplots(2,3,figsize=(12,8))
+            fig, axs = plt.subplots(2, 3, figsize=(12, 8))
             show(
                 probe.probe,
-                scaling='log',
-                circle = {
-                  'center':probe.origin,
-                  'R': probe.alpha,
-                  'alpha':0.2,
-                  'fill':True
+                scaling="log",
+                circle={
+                    "center": probe.origin,
+                    "R": probe.alpha,
+                    "alpha": 0.2,
+                    "fill": True,
                 },
-                figax = (fig,axs[0,0])
+                figax=(fig, axs[0, 0]),
             )
             show(
                 probe.probe,
-                scaling='none',
-                intensity_range='minmax',
-                circle = {
-                  'center':probe.origin,
-                  'R': probe.alpha,
-                  'alpha':0.2,
-                  'fill':True
+                scaling="none",
+                intensity_range="minmax",
+                circle={
+                    "center": probe.origin,
+                    "R": probe.alpha,
+                    "alpha": 0.2,
+                    "fill": True,
                 },
-                figax = (fig,axs[0,1])
+                figax=(fig, axs[0, 1]),
             )
             show(
                 probe.probe,
-                scaling='none',
-                intensity_range='absolute',
-                vmin=0,vmax=np.max(probe.probe)*0.1,
-                circle = {
-                  'center':probe.origin,
-                  'R': probe.alpha,
-                  'alpha':0.2,
-                  'fill':True
+                scaling="none",
+                intensity_range="absolute",
+                vmin=0,
+                vmax=np.max(probe.probe) * 0.1,
+                circle={
+                    "center": probe.origin,
+                    "R": probe.alpha,
+                    "alpha": 0.2,
+                    "fill": True,
                 },
-                figax = (fig,axs[0,2])
+                figax=(fig, axs[0, 2]),
+            )
+            show(probe.probe, scaling="log", figax=(fig, axs[1, 0]))
+            show(
+                probe.probe,
+                scaling="none",
+                intensity_range="minmax",
+                figax=(fig, axs[1, 1]),
             )
             show(
                 probe.probe,
-                scaling='log',
-                figax = (fig,axs[1,0])
+                scaling="none",
+                intensity_range="absolute",
+                vmin=0,
+                vmax=np.max(probe.probe) * 0.1,
+                figax=(fig, axs[1, 2]),
             )
-            show(
-                probe.probe,
-                scaling='none',
-                intensity_range='minmax',
-                figax = (fig,axs[1,1])
-            )
-            show(
-                probe.probe,
-                scaling='none',
-                intensity_range='absolute',
-                vmin=0,vmax=np.max(probe.probe)*0.1,
-                figax = (fig,axs[1,2])
-            )
-            axs[0,0].set_title('log')
-            axs[0,1].set_title('linear | min/max')
-            axs[0,2].set_title('linear | min/0.1*max')
+            axs[0, 0].set_title("log")
+            axs[0, 1].set_title("linear | min/max")
+            axs[0, 2].set_title("linear | min/0.1*max")
             plt.show()
 
         # add probe to tree and return
@@ -764,7 +762,6 @@ class DataCube(
         # return
         if returncal:
             return x
-
 
     # Bragg disks
 

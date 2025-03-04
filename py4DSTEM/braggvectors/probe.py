@@ -367,19 +367,19 @@ class Probe(DiffractionSlice, Data):
             self.origin is not None
         ), "no probe origin found; try running `Probe.measure_disk`"
         # prepare vars
-        qx0,qy0 = self.origin
+        qx0, qy0 = self.origin
         alpha = self.alpha
         probe = self.probe
-        Q_Nx,Q_Ny = probe.shape
+        Q_Nx, Q_Ny = probe.shape
         # setup mesh
-        qyy,qxx = np.meshgrid(np.arange(Q_Ny),np.arange(Q_Nx))
-        qrr = np.hypot(qxx-qx0,qyy-qy0)
+        qyy, qxx = np.meshgrid(np.arange(Q_Ny), np.arange(Q_Nx))
+        qrr = np.hypot(qxx - qx0, qyy - qy0)
         # find damping curve
-        r = alpha*(1+s)
-        _w = alpha*w
-        f = 1+(r-qrr)/_w
-        f = np.minimum(np.maximum(f,0),1)
-        f = np.sin(f)**p
+        r = alpha * (1 + s)
+        _w = alpha * w
+        f = 1 + (r - qrr) / _w
+        f = np.minimum(np.maximum(f, 0), 1)
+        f = np.sin(f) ** p
         # scale probe
         probe *= f
         # update
@@ -387,7 +387,6 @@ class Probe(DiffractionSlice, Data):
             self.probe = probe
         # return scaled probe
         return probe
-
 
     # Kernel generation methods
 
@@ -626,6 +625,7 @@ class Probe(DiffractionSlice, Data):
         # Get CoM
         if origin is None:
             from py4DSTEM.process.calibration import get_probe_size
+
             _, xCoM, yCoM = get_probe_size(probe)
         else:
             xCoM, yCoM = origin
@@ -639,7 +639,7 @@ class Probe(DiffractionSlice, Data):
             np.mod(np.arange(Q_Ny) + Q_Ny // 2, Q_Ny) - Q_Ny // 2,
             np.mod(np.arange(Q_Nx) + Q_Nx // 2, Q_Nx) - Q_Nx // 2,
         )
-        qr = np.hypot(qx,qy)
+        qr = np.hypot(qx, qy)
         # Calculate sigmoid
         if type == "logistic":
             r0 = 0.5 * (ro + ri)
