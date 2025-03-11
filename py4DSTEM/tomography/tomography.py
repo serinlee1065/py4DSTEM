@@ -322,7 +322,7 @@ class Tomography:
         cylinder_mask[
             :,
             (xx - center[0]) ** 2 + (yy - center[1]) ** 2
-            <= ((center[0] + center[1]) / 2) ** 2,
+            <= (np.max((center[0], center[1]))) ** 2,
         ] = 1
 
         self._cylinder_mask = cylinder_mask
