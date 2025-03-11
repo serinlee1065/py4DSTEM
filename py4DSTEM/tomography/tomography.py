@@ -1650,11 +1650,15 @@ class Tomography:
         if cylinder_mask:
             storage = self._storage
             s = self._object_shape_6D
-            self._object = self._object * (
+
+            int_zero = (
                 copy_to_device(
                     self._cylinder_mask.reshape((s[0], s[1] * s[2])), storage
-                )[:, :, None]
+                )
+                == 0
             )
+
+            self._object[int_zero] = 0
 
         elif zero_edges_real:
             xp = self._xp_storage
