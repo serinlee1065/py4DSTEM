@@ -789,7 +789,7 @@ class Tomography:
             y = x_temp.copy()
 
         if self._tilt_rotation_axis_shift_px:
-            y += self._tilt_rotation_axis_shift_px
+            y -= self._tilt_rotation_axis_shift_px
 
         # remove data outside FOV
         if mask_real_space is None:
