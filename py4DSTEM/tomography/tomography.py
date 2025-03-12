@@ -369,8 +369,9 @@ class Tomography:
         zero_edges_real: bool = True,
         zero_edges_diffraction: bool = True,
         cylinder_mask: bool = True,
-        baseline_thresh: float = None,
         diffraction_gaussian_filter: float = 0,
+        baseline_thresh: float = None,
+        diffraction_mean_shrinkage: float = False,
         distributed=False,
         num_jobs=None,
         threads_per_job=1,
@@ -397,11 +398,14 @@ class Tomography:
         zero_edges_diffraction: bool
             if True, zeros diffraction edges with spherical mask
         cylinderical_mask: bool
-            if True, applies cylinderical mask
+            if True, applies cylindrical mask to reconstruction
+        diffraction_gaussian_filter: float
+            Gaussian filter sigma for diffraction space (in pixels)    if True, applies cylinderical mask
         baseline_thresh: float
             if not None, data is cropped below threshold. Value is percentile of object.
-        diffraction_gaussian_filter: float
-            Gaussian filter sigma for diffraction space (in pixels)
+        diffraction_mean_shrinkage: bool
+            if True, subtracts mean from each kernel in real space and zeros any residual negative values
+
         """
         device = self._device
 
@@ -490,8 +494,9 @@ class Tomography:
                 zero_edges_real=zero_edges_real,
                 zero_edges_diffraction=zero_edges_diffraction,
                 cylinder_mask=cylinder_mask,
-                baseline_thresh=baseline_thresh,
                 diffraction_gaussian_filter=diffraction_gaussian_filter,
+                baseline_thresh=baseline_thresh,
+                diffraction_mean_shrinkage=diffraction_mean_shrinkage,
             )
 
             self.error_iterations.append(error_iteration)
@@ -1451,7 +1456,7 @@ class Tomography:
         if dp_patterns.shape[0] == 0:
             update = xp.zeros(object_sliced.shape)
 
-            error = xp.mean(object_sliced.ravel() ** 2) ** 0.5
+            error = 0  # xp.mean(object_sliced.ravel() ** 2) ** 0.5
 
             error = copy_to_device(error, "cpu")
         else:
@@ -1629,6 +1634,7 @@ class Tomography:
         cylinder_mask: bool,
         baseline_thresh: float,
         diffraction_gaussian_filter: float,
+        diffraction_mean_shrinkage: bool,
     ):
         """
         Constrains for object
@@ -1642,10 +1648,12 @@ class Tomography:
             If True, zeros diffraction edges with spherical mask
         cylinderical_mask: bool
             If True, applies cylinderical mask
-        baseline_thresh: float
-            If not None, data is cropped below threshold.  Value is percentile of object.
         diffraction_gaussian_filter: float
             Gaussian filter sigma for diffraction space (in pixels)
+        baseline_thresh: float
+            If not None, data is cropped below threshold.  Value is percentile of object.
+        diffraction_mean_shrinkage: bool
+            if True, subtracts mean from each kernel in real space and zeros any residual negative values
         """
         if cylinder_mask:
             storage = self._storage
@@ -1679,6 +1687,20 @@ class Tomography:
             diffraction_edge_mask = copy_to_device(self._diffraction_edge_mask, storage)
             self._object = self._object * diffraction_edge_mask[None, None, :]
 
+        if diffraction_gaussian_filter > 0:
+            from scipy.ndimage import gaussian_filter
+
+            storage = self._storage
+            s = self._object.shape
+
+            obj_6D = copy_to_device(self.object_6D, device="cpu")
+
+            obj_6D = gaussian_filter(
+                obj_6D, diffraction_gaussian_filter, axes=(-1, -2, -3)
+            )  # axes only supported
+
+            self._object = copy_to_device(obj_6D.reshape(s), device=storage)
+
         if baseline_thresh is not None:
             _, vmin, _ = return_scaled_histogram_ordering(
                 self._object, vmin=baseline_thresh
@@ -1686,26 +1708,9 @@ class Tomography:
             xp = self._xp_storage
             self._object = xp.clip(self._object - vmin, 0, np.inf)
 
-        if diffraction_gaussian_filter > 0:
-            if self._device == "cpu":
-                from scipy.ndimage import gaussian_filter
-
-                device = "cpu"
-            else:
-                from cp.scipy.ndimage import gaussian_filter
-
-                device = "gpu"
-
-            storage = self._storage
-            s = self._object.shape
-
-            obj_6D = copy_to_device(self.object_6D, device=device)
-
-            obj_6D = gaussian_filter(
-                obj_6D, diffraction_gaussian_filter, axes=(-1, -2, -3)
-            )
-
-            self._object = copy_to_device(obj_6D.reshape(s), device=storage)
+        if diffraction_mean_shrinkage is True:
+            self._object -= self._object.mean((0, 1))
+            self._object[self._object < 0] = 0
 
     def set_storage(self, storage):
         """
