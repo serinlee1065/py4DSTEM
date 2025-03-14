@@ -27,7 +27,7 @@ setup(
         "scipy >= 1.5.2",
         "h5py >= 3.2.0",
         "hdf5plugin >= 4.1.3",
-        "ncempy >= 1.8.1, <= 1.11.2",
+        "ncempy >= 1.8.1",
         "matplotlib >= 3.2.2",
         "scikit-image >= 0.17.2",
         "scikit-learn >= 0.23.2, < 1.5",
