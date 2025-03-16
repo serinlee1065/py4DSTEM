@@ -139,6 +139,8 @@ class Tomography:
         force_q_to_r_transpose=False,
         dp_shift_method="pixel",
         num_points: int = None,
+        device: str = None,
+        clear_fft_cache: bool = True,
     ):
         """
         Preprocessing for nanobeam tomography
@@ -195,6 +197,8 @@ class Tomography:
         num_points: int
             number of points for bilinear interpolation in real space
         """
+        self.set_device(device, clear_fft_cache)
+
         xp_storage = self._xp_storage
         storage = self._storage
         xp = self._xp
@@ -375,6 +379,8 @@ class Tomography:
         distributed=False,
         num_jobs=None,
         threads_per_job=1,
+        device: str = None,
+        clear_fft_cache: bool = True,
     ):
         """
         Main loop for reconstruct
@@ -407,6 +413,20 @@ class Tomography:
             if True, subtracts mean from each kernel in real space and zeros any residual negative values
 
         """
+        self.set_device(device, clear_fft_cache)
+        if device is not None:
+            self._cylinder_mask = copy_to_device(self._cylinder_mask, device)
+            self._weights_diff_all_counted = copy_to_device(
+                self._weights_diff_all_counted, device
+            )
+            self._diffraction_edge_mask = copy_to_device(
+                self._weights_diff_all_counted, device
+            )
+            self._ind_real = copy_to_device(self._ind_real, device)
+            self._ind_diff = copy_to_device(self._ind_diff, device)
+            self._weights_real = copy_to_device(self._weights_real, device)
+            self._weights_diff = copy_to_device(self._weights_diff, device)
+
         device = self._device
 
         if reset is True:
@@ -1140,19 +1160,11 @@ class Tomography:
             self._weights_real = []
             self._ind_diff = []
             self._weights_diff = []
-            self._ind0_diff = []
-            self._ind1_diff = []
-            self._ind0 = []
-            self._ind1 = []
 
         self._ind_real.append(xp.asarray(ind_real))
         self._ind_diff.append(xp.asarray(ind_diff))
         self._weights_real.append(xp.asarray(weights_real))
         self._weights_diff.append(xp.asarray(weights_diff))
-        self._ind0_diff.append(xp.asarray(ind0_diff))
-        self._ind1_diff.append(xp.asarray(ind1_diff))
-        self._ind0.append(xp.asarray(ind0))
-        self._ind1.append(xp.asarray(ind1))
 
     def _reshape_4D_array_to_2D(
         self,
@@ -1436,6 +1448,7 @@ class Tomography:
             experimental diffraction patterns
         """
         xp = self._xp
+        device = self._device
 
         s = self._object_shape_6D
 
@@ -1484,6 +1497,8 @@ class Tomography:
                     ),
                 ]
             )
+
+            weights = copy_to_device(weights, device)
 
             positions_y = xp.clip(
                 xp.hstack(
