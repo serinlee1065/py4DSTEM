@@ -141,6 +141,7 @@ class Tomography:
         num_points: int = None,
         device: str = None,
         clear_fft_cache: bool = True,
+        progress_bar: bool = True,
     ):
         """
         Preprocessing for nanobeam tomography
@@ -221,7 +222,12 @@ class Tomography:
         self._num_points = num_points
 
         # preprocessing of diffraction data
-        for a0 in range(self._num_datacubes):
+        for a0 in tqdmnd(
+            self._num_datacubes,
+            desc="importing datacubes",
+            unit=" iter",
+            disable=not progress_bar,
+        ):
             # load and preprocess datacube
             (datacube, mask_real_space, diffraction_space_mask_com, q_max_inv_A) = (
                 self._prepare_datacube(
@@ -369,7 +375,6 @@ class Tomography:
         store_initial_object: bool = True,
         reset: bool = True,
         step_size: float = 0.5,
-        progress_bar: bool = True,
         zero_edges_real: bool = True,
         zero_edges_diffraction: bool = True,
         cylinder_mask: bool = True,
@@ -381,6 +386,7 @@ class Tomography:
         threads_per_job=1,
         device: str = None,
         clear_fft_cache: bool = True,
+        progress_bar: bool = True,
     ):
         """
         Main loop for reconstruct
