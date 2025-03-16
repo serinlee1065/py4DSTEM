@@ -1724,7 +1724,7 @@ class Tomography:
             self._object = xp.clip(self._object - vmin, 0, np.inf)
 
         if diffraction_mean_shrinkage is True:
-            self._object -= self._object.mean((0, 1))
+            self._object -= self._object.mean()
             self._object[self._object < 0] = 0
 
     def set_storage(self, storage):
