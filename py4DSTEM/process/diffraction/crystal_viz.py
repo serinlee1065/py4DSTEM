@@ -30,7 +30,7 @@ def plot_structure(
     camera_dist: Optional[float] = None,
     show_axes: bool = False,
     perspective_axes: bool = True,
-    figsize: Union[tuple, list, np.ndarray] = (8, 8),
+    figsize: tuple = (8, 8),
     returnfig: bool = False,
 ):
     """
@@ -98,20 +98,17 @@ def plot_structure(
     sub = pos[:, 0] < tol_distance
     pos = np.vstack([pos, pos[sub, :] + np.array([1, 0, 0])])
     ID = np.hstack([ID, ID[sub]])
-    if occ is not None:
-        occ = np.hstack([occ, occ[sub]])
+    occ = np.hstack([occ, occ[sub]])
     # y tile
     sub = pos[:, 1] < tol_distance
     pos = np.vstack([pos, pos[sub, :] + np.array([0, 1, 0])])
     ID = np.hstack([ID, ID[sub]])
-    if occ is not None:
-        occ = np.hstack([occ, occ[sub]])
+    occ = np.hstack([occ, occ[sub]])
     # z tile
     sub = pos[:, 2] < tol_distance
     pos = np.vstack([pos, pos[sub, :] + np.array([0, 0, 1])])
     ID = np.hstack([ID, ID[sub]])
-    if occ is not None:
-        occ = np.hstack([occ, occ[sub]])
+    occ = np.hstack([occ, occ[sub]])
 
     # Cartesian atomic positions
     xyz = pos @ self.lat_real
@@ -150,7 +147,7 @@ def plot_structure(
 
     # atoms
     ID_all = np.unique(ID)
-    if np.all(np.asarray(occ) == 1):
+    if np.all(occ == 1.0):
         for ID_plot in ID_all:
             sub = ID == ID_plot
             ax.scatter(
