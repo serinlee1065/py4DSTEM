@@ -93,8 +93,8 @@ class DataCube(
         # Calc dim vectors
         dim_rx = np.arange(self.R_Nx) * rpixsize
         dim_ry = np.arange(self.R_Ny) * rpixsize
-        dim_qx = -origin[0] + np.arange(self.Q_Nx) * qpixsize
-        dim_qy = -origin[1] + np.arange(self.Q_Ny) * qpixsize
+        dim_qx = (np.arange(self.Q_Nx) - origin[0]) * qpixsize
+        dim_qy = (np.arange(self.Q_Ny) - origin[1]) * qpixsize
 
         # Set dim vectors
         self.set_dim(0, dim_rx, units=rpixunits)
