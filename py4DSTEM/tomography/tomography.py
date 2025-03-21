@@ -381,6 +381,11 @@ class Tomography:
         diffraction_gaussian_filter: float = 0,
         baseline_thresh: float = None,
         diffraction_mean_shrinkage: float = False,
+        position_refinement: bool = False,
+        position_refinement_frequency: int = 1,
+        position_refinement_max_num_iter: int = 10,
+        position_refinement_stop_criteria_shift_size: float = 0.2,
+        position_refinement_y_frequency: int = 4,
         distributed=False,
         num_jobs=None,
         threads_per_job=1,
@@ -394,7 +399,7 @@ class Tomography:
         Parameters
         ----------
         num_iter: int
-            Number of iterations
+            number of iterations
         store_iterations: bool
             if True, stores number of iterations
         store_initial_object: bool
@@ -419,7 +424,17 @@ class Tomography:
             if not None, data is cropped below threshold. Value is percentile of object.
         diffraction_mean_shrinkage: bool
             if True, subtracts mean from each kernel in real space and zeros any residual negative values
-
+        position_refinement: bool
+            if True, refines positions
+        position_refinement_frequency: int
+            frequency of iterations to run position refinement
+        position_refinement_max_num_iter: int
+            maximum number of iterations to run for position refinement
+        position_refinement_stop_criteria_shift_size: float
+            below a certain threshold stop searching for updated positions
+        position_refinement_y_frequency: int
+            if y_frequency is greater than 1, only uses y rows of that frequency for
+            position update
         """
         self.set_device(device, clear_fft_cache)
         if device is not None:
@@ -538,6 +553,13 @@ class Tomography:
                 diffraction_mean_shrinkage=diffraction_mean_shrinkage,
             )
 
+            if position_refinement and a0%position_refinement_frequency<1e-6:
+                self.position_refinement(
+                    max_num_iter=position_refinement_max_num_iter,
+                    stop_criteria_shift_size=position_refinement_stop_criteria_shift_size,
+                    y_frequency=position_refinement_y_frequency,
+                )
+
             self.error_iterations.append(error_iteration)
             self.error = error_iteration
             if store_iterations:
@@ -576,15 +598,29 @@ class Tomography:
 
         return x_index, i_real, i_diff, update_r_summed, error
 
-    def refine_positions(
+    def position_refinement(
         self,
-        max_num_iter: int = 4,
-        min_shift: float = 0.5,
-        stop_criteria_shift_size: float = 0.5,
+        max_num_iter: int = 10,
+        stop_criteria_shift_size: float = 0.2,
         y_frequency: int = 4,
         datacube_numbers: Union[int, np.ndarray] = None,
     ):
-        """ """
+        """
+        Refining positions by searching a 2x2 grid space and updating based
+        on forward projection error
+
+        Parameters
+        ----------
+        max_num_iter: int
+            maximum number of iterations to run per datacube
+        stop_criteria_shift_size: float
+            below a certain threshold stop searching for updated positions
+        y_frequency: int
+            if y_frequency is greater than 1, only uses y rows of that frequency for
+            position update
+        datacube_numbers: int or np.ndarray of integers
+            datacubes to update positions for with default to update all datacubes
+        """
         xp = self._xp
         device = self._device
         s = self._object_shape_6D
@@ -658,7 +694,6 @@ class Tomography:
                     np.asarray(position_deltas, dtype="float") * weights[:, None]
                 ).sum(0)
 
-                position_delta[np.abs(position_delta) < min_shift] = 0
                 x_vox = positions_save[0].copy() + position_delta[0]
                 y_vox = positions_save[1].copy() + position_delta[1]
                 x_vox_F = np.floor(x_vox).astype("int")
@@ -682,7 +717,6 @@ class Tomography:
 
                 if np.max(position_delta) < stop_criteria_shift_size:
                     break
-        return self
 
     def _prepare_datacube(
         self,
