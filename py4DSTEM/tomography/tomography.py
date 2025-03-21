@@ -373,6 +373,7 @@ class Tomography:
         num_iter: int = 1,
         store_iterations: bool = False,
         store_initial_object: bool = True,
+        store_error_per_step: bool = False,
         reset: bool = True,
         step_size: float = 0.5,
         zero_edges_real: bool = True,
@@ -399,6 +400,8 @@ class Tomography:
             if True, stores number of iterations
         store_initial_object: bool
             if True, keeps a copy of an initial object to reset without preprocessing
+        store_error_per_step: bool
+            if True, stores error for each tilt for each iteration and order of tilts
         reset: bool
             if True, resets object
         step_size: float
@@ -446,6 +449,10 @@ class Tomography:
             else:
                 self._object = self._object_initial
 
+            if store_error_per_step:
+                self._tilt_order = []
+                self._error_per_step = []
+
         for a0 in tqdmnd(
             num_iter,
             desc="Reconstructing object",
@@ -466,6 +473,7 @@ class Tomography:
                         return self._reconstruct(**args)
 
             for a1 in range(self._num_datacubes):
+                error_iteration_datacube = 0
                 a1_shuffle = random_tilt_order[a1]
                 diffraction_patterns_projected = copy_to_device(
                     self._diffraction_patterns_projected[a1_shuffle], device
@@ -480,7 +488,7 @@ class Tomography:
                             diffraction_patterns_projected=diffraction_patterns_projected,
                             step_size=step_size,
                         )
-                        error_iteration += error
+                        error_iteration_datacube += error
 
                         self._object[x_index, yy, zz] += update_r_summed
 
@@ -511,10 +519,16 @@ class Tomography:
                         self._object[
                             results[a2][0], results[a2][1], results[a2][2]
                         ] += results[a2][3]
-                        error_iteration += results[a2][4]
+                        error_iteration_datacube += results[a2][4]
 
                 else:
                     raise ValueError(("distributed not implemented for gpu"))
+
+                if store_error_per_step:
+                    self._tilt_order.append(a1_shuffle)
+                    self._error_per_step.append(error_iteration_datacube)
+
+                error_iteration += error_iteration_datacube
 
             self._constraints(
                 zero_edges_real=zero_edges_real,
@@ -1478,6 +1492,7 @@ class Tomography:
             error = 0  # xp.mean(object_sliced.ravel() ** 2) ** 0.5
 
             error = copy_to_device(error, "cpu")
+
         else:
             weights = np.hstack(
                 [
@@ -1804,6 +1819,21 @@ class Tomography:
 
         return self
 
+    @property
+    def object_6D(self):
+        """6D object"""
+        return copy_to_device(self._object.reshape(self._object_shape_6D), "cpu")
+
+    def recovered_4D_scan(self, index):
+        """recovered 4D-STEM scan from projected patterns"""
+
+        scan = self._reshape_2D_array_to_4D(
+            self._diffraction_patterns_projected[index],
+            positions=self._positions_vox_F[index],
+        )
+
+        return copy_to_device(scan, "cpu")
+
     def visualize(self, plot_convergence=True, figsize=(10, 10)):
         """
         vis
@@ -1851,20 +1881,24 @@ class Tomography:
 
         return self
 
-    @property
-    def object_6D(self):
-        """6D object"""
-        return copy_to_device(self._object.reshape(self._object_shape_6D), "cpu")
-
-    def recovered_4D_scan(self, index):
-        """recovered 4D-STEM scan from projected patterns"""
-
-        scan = self._reshape_2D_array_to_4D(
-            self._diffraction_patterns_projected[index],
-            positions=self._positions_vox_F[index],
+    def show_error_per_iteration(self):
+        num_iter = len(self._tilt_order) // self._num_datacubes
+        iterations = np.repeat(np.arange(num_iter), self._num_datacubes)
+        order = np.asarray(self._tilt_order)
+        ind = np.argsort(
+            np.ravel_multi_index((iterations, order), (num_iter, self._num_datacubes))
+        )
+        error = (np.asarray(self._error_per_step)[ind]).reshape(
+            (num_iter, self._num_datacubes)
         )
 
-        return scan
+        fig, ax = show(error, cmap="magma", returnfig=True, vmax=1, vmin=0)
+
+        ax.set_title("error")
+        ax.set_ylabel("iteration")
+        ax.set_xlabel("datacube")
+
+        return self
 
     def widget(
         self,
