@@ -1881,7 +1881,7 @@ class Tomography:
 
         return self
 
-    def show_error_per_iteration(self):
+    def show_error_per_iteration(self, **kwargs):
         num_iter = len(self._tilt_order) // self._num_datacubes
         iterations = np.repeat(np.arange(num_iter), self._num_datacubes)
         order = np.asarray(self._tilt_order)
@@ -1892,7 +1892,12 @@ class Tomography:
             (num_iter, self._num_datacubes)
         )
 
-        fig, ax = show(error, cmap="magma", returnfig=True, vmax=1, vmin=0)
+        vmin = kwargs.pop("vmin", None)
+        vmax = kwargs.pop("vmax", None)
+
+        fig, ax = show(
+            error, cmap="magma", returnfig=True, vmax=vmax, vmin=vmin, **kwargs
+        )
 
         ax.set_title("error")
         ax.set_ylabel("iteration")
