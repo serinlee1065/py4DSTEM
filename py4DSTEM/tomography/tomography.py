@@ -588,8 +588,10 @@ class Tomography:
         xp = self._xp
         device = self._device
         s = self._object_shape_6D
-
         num_points = self._num_points
+
+        if not hasattr(self, "_position_refinements"):
+            self._position_refinements = np.zeros((self._num_datacubes, 2))
 
         if datacube_numbers is None:
             datacube_numbers = np.arange(self._num_datacubes)
@@ -646,15 +648,17 @@ class Tomography:
                 error_shifts_mean = np.ma.array(
                     data=error_shifts, mask=error_shifts == 0
                 )
+
                 weights = error_shifts_mean.mean(0)
                 weights -= weights.mean()
                 weights = -1 * weights
                 weights /= np.abs(weights).sum()
+
                 position_delta = (
                     np.asarray(position_deltas, dtype="float") * weights[:, None]
                 ).sum(0)
 
-                position_delta[position_delta < min_shift] = 0
+                position_delta[np.abs(position_delta) < min_shift] = 0
                 x_vox = positions_save[0].copy() + position_delta[0]
                 y_vox = positions_save[1].copy() + position_delta[1]
                 x_vox_F = np.floor(x_vox).astype("int")
@@ -674,6 +678,7 @@ class Tomography:
                     copy_to_device(dx, device),
                     copy_to_device(dy, device),
                 )
+                self._position_refinements[a0] += position_delta
 
                 if np.max(position_delta) < stop_criteria_shift_size:
                     break
