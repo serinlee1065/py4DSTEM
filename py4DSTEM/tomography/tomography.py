@@ -207,7 +207,6 @@ class Tomography:
         self._num_datacubes = len(self._datacubes)
 
         self._diffraction_patterns_projected = []
-        self._positions_ang = []
         self._positions_vox = []
         self._positions_vox_F = []
         self._positions_vox_dF = []
@@ -577,6 +576,109 @@ class Tomography:
 
         return x_index, i_real, i_diff, update_r_summed, error
 
+    def refine_positions(
+        self,
+        max_num_iter: int = 4,
+        min_shift: float = 0.5,
+        stop_criteria_shift_size: float = 0.5,
+        y_frequency: int = 4,
+        datacube_numbers: Union[int, np.ndarray] = None,
+    ):
+        """ """
+        xp = self._xp
+        device = self._device
+        s = self._object_shape_6D
+
+        num_points = self._num_points
+
+        if datacube_numbers is None:
+            datacube_numbers = np.arange(self._num_datacubes)
+        elif np.isscalar(datacube_numbers):
+            datacube_numbers = np.atleast_1d(np.asarray((datacube_numbers)))
+
+        y_values = np.arange(s[1] // y_frequency) * y_frequency
+
+        random_tilt_order = datacube_numbers.copy()
+
+        for a0 in range(datacube_numbers.shape[0]):
+            for a1 in range(max_num_iter):
+                positions_save = (
+                    self._positions_vox[a0][0].copy(),
+                    self._positions_vox[a0][1].copy(),
+                )
+                positions_F_save = (
+                    self._positions_vox_F[a0][0].copy(),
+                    self._positions_vox_F[a0][1].copy(),
+                )
+
+                diffraction_patterns_projected = copy_to_device(
+                    self._diffraction_patterns_projected[a0], device
+                )
+                error_shifts = np.zeros((y_values.shape[0], 4))
+                position_deltas = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+
+                for a2 in range(y_values.shape[0]):
+                    object_sliced = self._forward(
+                        datacube_number=a0,
+                        x_index=a2,
+                        num_points=num_points,
+                    )
+
+                    for a3 in range(4):
+                        self._positions_vox[a0] = (
+                            positions_save[0].copy() + position_deltas[a3][0],
+                            positions_save[1].copy() + position_deltas[a3][1],
+                        )
+                        self._positions_vox_F[a0] = (
+                            positions_F_save[0].copy() + position_deltas[a3][0],
+                            positions_F_save[1].copy() + position_deltas[a3][1],
+                        )
+
+                        _, error = self._calculate_update(
+                            object_sliced=object_sliced,
+                            diffraction_patterns_projected=diffraction_patterns_projected,
+                            datacube_number=a0,
+                            x_index=a2,
+                        )
+
+                        error_shifts[a2, a3] = error
+
+                error_shifts_mean = np.ma.array(
+                    data=error_shifts, mask=error_shifts == 0
+                )
+                weights = error_shifts_mean.mean(0)
+                print(weights)
+                weights -= weights.mean()
+                weights = -1 * weights
+                weights /= np.abs(weights).sum()
+                position_delta = (
+                    np.asarray(position_deltas, dtype="float") * weights[:, None]
+                ).sum(0)
+
+                position_delta[position_delta < min_shift] = 0
+
+                print(position_delta)
+                x_vox = positions_save[0].copy() + position_delta[0]
+                y_vox = positions_save[1].copy() + position_delta[1]
+                x_vox_F = np.floor(x_vox).astype("int")
+                y_vox_F = np.floor(y_vox).astype("int")
+                dx = x_vox - x_vox_F
+                dy = y_vox - y_vox_F
+
+                self._positions_vox.append(
+                    (copy_to_device(x_vox, device), copy_to_device(y_vox, device))
+                )
+                self._positions_vox_F.append(
+                    (copy_to_device(x_vox_F, device), copy_to_device(y_vox_F, device))
+                )
+                self._positions_vox_dF.append(
+                    (copy_to_device(dx, device), copy_to_device(dy, device))
+                )
+
+                if np.max(position_delta) < stop_criteria_shift_size:
+                    break
+        return self
+
     def _prepare_datacube(
         self,
         datacube_number,
@@ -861,7 +963,6 @@ class Tomography:
         dy = y_vox - y_vox_F
 
         # store pixels
-        self._positions_ang.append((x, y))
         self._positions_vox.append(
             (copy_to_device(x_vox, device), copy_to_device(y_vox, device))
         )
@@ -1488,9 +1589,7 @@ class Tomography:
 
         if dp_patterns.shape[0] == 0:
             update = xp.zeros(object_sliced.shape)
-
-            error = 0  # xp.mean(object_sliced.ravel() ** 2) ** 0.5
-
+            error = 0
             error = copy_to_device(error, "cpu")
 
         else:
