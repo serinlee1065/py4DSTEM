@@ -647,7 +647,6 @@ class Tomography:
                     data=error_shifts, mask=error_shifts == 0
                 )
                 weights = error_shifts_mean.mean(0)
-                print(weights)
                 weights -= weights.mean()
                 weights = -1 * weights
                 weights /= np.abs(weights).sum()
@@ -656,8 +655,6 @@ class Tomography:
                 ).sum(0)
 
                 position_delta[position_delta < min_shift] = 0
-
-                print(position_delta)
                 x_vox = positions_save[0].copy() + position_delta[0]
                 y_vox = positions_save[1].copy() + position_delta[1]
                 x_vox_F = np.floor(x_vox).astype("int")
@@ -665,14 +662,17 @@ class Tomography:
                 dx = x_vox - x_vox_F
                 dy = y_vox - y_vox_F
 
-                self._positions_vox.append(
-                    (copy_to_device(x_vox, device), copy_to_device(y_vox, device))
+                self._positions_vox[a0] = (
+                    copy_to_device(x_vox, device),
+                    copy_to_device(y_vox, device),
                 )
-                self._positions_vox_F.append(
-                    (copy_to_device(x_vox_F, device), copy_to_device(y_vox_F, device))
+                self._positions_vox_F[a0] = (
+                    copy_to_device(x_vox_F, device),
+                    copy_to_device(y_vox_F, device),
                 )
-                self._positions_vox_dF.append(
-                    (copy_to_device(dx, device), copy_to_device(dy, device))
+                self._positions_vox_dF[a0] = (
+                    copy_to_device(dx, device),
+                    copy_to_device(dy, device),
                 )
 
                 if np.max(position_delta) < stop_criteria_shift_size:
