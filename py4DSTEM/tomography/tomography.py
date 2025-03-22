@@ -711,7 +711,7 @@ class Tomography:
                     data=error_shifts, mask=error_shifts == 0
                 )
 
-                weights = error_shifts_mean.mean(0)
+                weights = error_shifts_mean.mean(0).data
                 weights -= weights.mean()
                 weights = -1 * weights
                 weights /= np.abs(weights).sum()
@@ -726,11 +726,11 @@ class Tomography:
                         position_delta, -max_step_displacement, max_step_displacement
                     )
 
-                if max_step_displacement is not None:
+                if max_total_displacement is not None:
                     position_delta = np.clip(
                         position_delta,
-                        -(max_step_displacement - self._position_refinements[a0]),
-                        max_step_displacement - self._position_refinements[a0],
+                        -(max_total_displacement - self._position_refinements[a0]),
+                        max_total_displacement - self._position_refinements[a0],
                     )
 
                 x_vox = positions_save[0].copy() + position_delta[0]
