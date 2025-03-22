@@ -729,7 +729,7 @@ class Tomography:
                 if max_total_displacement is not None:
                     position_delta = np.clip(
                         position_delta,
-                        (-max_total_displacement - self._position_refinements[a0]),
+                        -max_total_displacement - self._position_refinements[a0],
                         max_total_displacement - self._position_refinements[a0],
                     )
 
