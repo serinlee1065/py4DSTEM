@@ -388,6 +388,8 @@ class Tomography:
         position_refinement_max_num_iter: int = 10,
         position_refinement_stop_criteria_shift_size: float = 0.2,
         position_refinement_y_frequency: int = 4,
+        position_refinement_max_total_displacement: int = None,
+        position_refinement_max_step_displacement: int = None,
         distributed=False,
         num_jobs=None,
         threads_per_job=1,
@@ -442,6 +444,10 @@ class Tomography:
         position_refinement_y_frequency: int
             if y_frequency is greater than 1, only uses y rows of that frequency for
             position update
+        position_refinement_max_total_displacement: float
+            maximum total displacement per datacube
+        position_refinement_max_step_displacement: float
+            maximum displacement per step
         """
         self.set_device(device, clear_fft_cache)
         if device is not None:
@@ -567,6 +573,8 @@ class Tomography:
                     stop_criteria_shift_size=position_refinement_stop_criteria_shift_size,
                     y_frequency=position_refinement_y_frequency,
                     step_size=position_refinement_step_size,
+                    max_total_displacement=position_refinement_max_total_displacement,
+                    max_step_displacement=position_refinement_max_step_displacement,
                 )
 
             self.error_iterations.append(error_iteration)
@@ -614,6 +622,8 @@ class Tomography:
         y_frequency: int = 4,
         datacube_numbers: Union[int, np.ndarray] = None,
         step_size: float = 1,
+        max_total_displacement: int = None,
+        max_step_displacement: int = None,
     ):
         """
         Refining positions by searching a 2x2 grid space and updating based
@@ -632,6 +642,10 @@ class Tomography:
             datacubes to update positions for with default to update all datacubes
         step_size: float
             scaling factor for position_update
+        max_total_displacement: float
+            maximum total displacement per datacube
+        max_step_displacement: float
+            maximum displacement per step
         """
         xp = self._xp
         device = self._device
@@ -707,6 +721,17 @@ class Tomography:
                 ).sum(0)
 
                 position_delta = position_delta * step_size
+                if max_step_displacement is not None:
+                    position_delta = np.clip(
+                        position_delta, -max_step_displacement, max_step_displacement
+                    )
+
+                if max_step_displacement is not None:
+                    position_delta = np.clip(
+                        position_delta,
+                        -(max_step_displacement - self._position_refinements[a0]),
+                        max_step_displacement - self._position_refinements[a0],
+                    )
 
                 x_vox = positions_save[0].copy() + position_delta[0]
                 y_vox = positions_save[1].copy() + position_delta[1]
