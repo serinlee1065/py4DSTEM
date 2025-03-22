@@ -380,9 +380,11 @@ class Tomography:
         cylinder_mask: bool = True,
         diffraction_gaussian_filter: float = 0,
         baseline_thresh: float = None,
-        diffraction_mean_shrinkage: float = False,
+        diffraction_shrinkage: float = False,
+        diffraction_shrinkage_threshold: float = None,
         position_refinement: bool = False,
         position_refinement_frequency: int = 1,
+        position_refinement_step_size: float = 1,
         position_refinement_max_num_iter: int = 10,
         position_refinement_stop_criteria_shift_size: float = 0.2,
         position_refinement_y_frequency: int = 4,
@@ -422,12 +424,17 @@ class Tomography:
             Gaussian filter sigma for diffraction space (in pixels)    if True, applies cylinderical mask
         baseline_thresh: float
             if not None, data is cropped below threshold. Value is percentile of object.
-        diffraction_mean_shrinkage: bool
-            if True, subtracts mean from each kernel in real space and zeros any residual negative values
+        diffraction_shrinkage: bool
+            if True, subtracts baseline from each kernel in real space and zeros any residual negative values. If no
+            theshold is provided, uses mean of object
+        diffraction_shrinkage_threshold: None
+            threshold for shrinkage
         position_refinement: bool
             if True, refines positions
         position_refinement_frequency: int
             frequency of iterations to run position refinement
+        position_refinement_step_size: float
+            scaling factor for step size
         position_refinement_max_num_iter: int
             maximum number of iterations to run for position refinement
         position_refinement_stop_criteria_shift_size: float
@@ -550,14 +557,16 @@ class Tomography:
                 cylinder_mask=cylinder_mask,
                 diffraction_gaussian_filter=diffraction_gaussian_filter,
                 baseline_thresh=baseline_thresh,
-                diffraction_mean_shrinkage=diffraction_mean_shrinkage,
+                diffraction_shrinkage=diffraction_shrinkage,
+                diffraction_shrinkage_threshold=diffraction_shrinkage_threshold,
             )
 
-            if position_refinement and a0%position_refinement_frequency<1e-6:
+            if position_refinement and a0 % position_refinement_frequency < 1e-6:
                 self.position_refinement(
                     max_num_iter=position_refinement_max_num_iter,
                     stop_criteria_shift_size=position_refinement_stop_criteria_shift_size,
                     y_frequency=position_refinement_y_frequency,
+                    step_size=position_refinement_step_size,
                 )
 
             self.error_iterations.append(error_iteration)
@@ -604,6 +613,7 @@ class Tomography:
         stop_criteria_shift_size: float = 0.2,
         y_frequency: int = 4,
         datacube_numbers: Union[int, np.ndarray] = None,
+        step_size: float = 1,
     ):
         """
         Refining positions by searching a 2x2 grid space and updating based
@@ -620,6 +630,8 @@ class Tomography:
             position update
         datacube_numbers: int or np.ndarray of integers
             datacubes to update positions for with default to update all datacubes
+        step_size: float
+            scaling factor for position_update
         """
         xp = self._xp
         device = self._device
@@ -693,6 +705,8 @@ class Tomography:
                 position_delta = (
                     np.asarray(position_deltas, dtype="float") * weights[:, None]
                 ).sum(0)
+
+                position_delta = position_delta * step_size
 
                 x_vox = positions_save[0].copy() + position_delta[0]
                 y_vox = positions_save[1].copy() + position_delta[1]
@@ -1808,7 +1822,8 @@ class Tomography:
         cylinder_mask: bool,
         baseline_thresh: float,
         diffraction_gaussian_filter: float,
-        diffraction_mean_shrinkage: bool,
+        diffraction_shrinkage: bool,
+        diffraction_shrinkage_threshold: float,
     ):
         """
         Constrains for object
@@ -1824,10 +1839,11 @@ class Tomography:
             If True, applies cylinderical mask
         diffraction_gaussian_filter: float
             Gaussian filter sigma for diffraction space (in pixels)
-        baseline_thresh: float
-            If not None, data is cropped below threshold.  Value is percentile of object.
-        diffraction_mean_shrinkage: bool
-            if True, subtracts mean from each kernel in real space and zeros any residual negative values
+        diffraction_shrinkage: bool
+            if True, subtracts baseline from each kernel in real space and zeros any residual negative values. If no
+            theshold is provided, uses mean of object
+        diffraction_shrinkage_threshold: None
+            threshold for shrinkage
         """
         if cylinder_mask:
             storage = self._storage
@@ -1882,8 +1898,10 @@ class Tomography:
             xp = self._xp_storage
             self._object = xp.clip(self._object - vmin, 0, np.inf)
 
-        if diffraction_mean_shrinkage is True:
-            self._object -= self._object.mean()
+        if diffraction_shrinkage is True:
+            if diffraction_shrinkage_threshold is None:
+                diffraction_shrinkage_threshold = self._object.mean()
+            self._object -= diffraction_shrinkage_threshold
             self._object[self._object < 0] = 0
 
     def set_storage(self, storage):
