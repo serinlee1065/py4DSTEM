@@ -379,6 +379,7 @@ class Tomography:
         zero_edges_diffraction: bool = True,
         cylinder_mask: bool = True,
         diffraction_gaussian_filter: float = 0,
+        real_space_gaussian_filter: float = 0,
         baseline_thresh: float = None,
         diffraction_shrinkage: float = False,
         diffraction_shrinkage_threshold: float = None,
@@ -423,7 +424,9 @@ class Tomography:
         cylinderical_mask: bool
             if True, applies cylindrical mask to reconstruction
         diffraction_gaussian_filter: float
-            Gaussian filter sigma for diffraction space (in pixels)    if True, applies cylinderical mask
+            Gaussian filter sigma for diffraction space (in pixels)
+        real_space_gaussian_filter: flooat
+            Gaussian filter for real space (in pixels)
         baseline_thresh: float
             if not None, data is cropped below threshold. Value is percentile of object.
         diffraction_shrinkage: bool
@@ -562,6 +565,7 @@ class Tomography:
                 zero_edges_diffraction=zero_edges_diffraction,
                 cylinder_mask=cylinder_mask,
                 diffraction_gaussian_filter=diffraction_gaussian_filter,
+                real_space_gaussian_filter=real_space_gaussian_filter,
                 baseline_thresh=baseline_thresh,
                 diffraction_shrinkage=diffraction_shrinkage,
                 diffraction_shrinkage_threshold=diffraction_shrinkage_threshold,
@@ -1847,6 +1851,7 @@ class Tomography:
         cylinder_mask: bool,
         baseline_thresh: float,
         diffraction_gaussian_filter: float,
+        real_space_gaussian_filter: float,
         diffraction_shrinkage: bool,
         diffraction_shrinkage_threshold: float,
     ):
@@ -1864,6 +1869,8 @@ class Tomography:
             If True, applies cylinderical mask
         diffraction_gaussian_filter: float
             Gaussian filter sigma for diffraction space (in pixels)
+        real_space_gaussian_filter: flooat
+            Gaussian filter for real space (in pixels)
         diffraction_shrinkage: bool
             if True, subtracts baseline from each kernel in real space and zeros any residual negative values. If no
             theshold is provided, uses mean of object
@@ -1912,7 +1919,21 @@ class Tomography:
 
             obj_6D = gaussian_filter(
                 obj_6D, diffraction_gaussian_filter, axes=(-1, -2, -3)
-            )  # axes only supported
+            )  # axes only supported in cpu
+
+            self._object = copy_to_device(obj_6D.reshape(s), device=storage)
+
+        if real_space_gaussian_filter > 0:
+            from scipy.ndimage import gaussian_filter
+
+            storage = self._storage
+            s = self._object.shape
+
+            obj_6D = copy_to_device(self.object_6D, device="cpu")
+
+            obj_6D = gaussian_filter(
+                obj_6D, diffraction_gaussian_filter, axes=(0, 1, 2)
+            )  # axes only supported in cpu
 
             self._object = copy_to_device(obj_6D.reshape(s), device=storage)
 
