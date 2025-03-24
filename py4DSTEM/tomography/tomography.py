@@ -2094,6 +2094,11 @@ class Tomography:
             (num_iter, self._num_datacubes)
         )
 
+        tilts_order = self._tilt_deg
+        tilts_order = np.argsort(tilts_order)
+
+        error = error[:, tilts_order]
+
         vmin = kwargs.pop("vmin", None)
         vmax = kwargs.pop("vmax", None)
 
@@ -2103,7 +2108,8 @@ class Tomography:
 
         ax.set_title("error")
         ax.set_ylabel("iteration")
-        ax.set_xlabel("datacube")
+        ax.set_xlabel("tilts (negative -> positive)")
+        ax.set_xticks([])
 
         return self
 
