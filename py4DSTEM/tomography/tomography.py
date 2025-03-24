@@ -1932,7 +1932,7 @@ class Tomography:
             obj_6D = copy_to_device(self.object_6D, device="cpu")
 
             obj_6D = gaussian_filter(
-                obj_6D, diffraction_gaussian_filter, axes=(0, 1, 2)
+                obj_6D, real_space_gaussian_filter, axes=(0, 1, 2)
             )  # axes only supported in cpu
 
             self._object = copy_to_device(obj_6D.reshape(s), device=storage)
