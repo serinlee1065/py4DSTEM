@@ -1251,8 +1251,9 @@ class Tomography:
         tilt = -np.deg2rad(tilt_deg)
 
         # solve for real space coordinates
-        y = np.arange(s[1])
-        z = np.arange(s[2])
+        s_max = np.max((s[1], s[2]))
+        y = np.arange(s_max)
+        z = np.arange(s_max)
         yy, zz = np.meshgrid(y, z, indexing="ij")
         sin = np.sin(tilt)
         cos = np.cos(tilt)
@@ -1261,8 +1262,8 @@ class Tomography:
         points = points @ r
         line_y = points[:, 0]
         line_z = points[:, 1]
-        line_y -= np.mean(line_y) - (s[1] - 1) / 2
-        line_z -= np.mean(line_z) - (s[2] - 1) / 2
+        line_y -= np.mean(line_y) - (s_max - 1) / 2 + ((s_max - s[1]) / 2)
+        line_z -= np.mean(line_z) - (s_max - 1) / 2 + ((s_max - s[2]) / 2)
 
         yF = np.floor(line_y).astype("int")
         zF = np.floor(line_z).astype("int")
