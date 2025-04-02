@@ -1594,9 +1594,10 @@ class Tomography:
         device = self._device
         obj = copy_to_device(self._object[x_index], device)
 
-        ind_real = self._ind_real[datacube_number].reshape((4, s[1], s[2]))
+        s_max = np.max((s[1], s[2]))
+        ind_real = self._ind_real[datacube_number].reshape((4, s_max, s_max))
         ind_diff = self._ind_diff[datacube_number].reshape((4, s[-1], s[-1]))
-        weights_real = self._weights_real[datacube_number].reshape((4, s[1], s[2]))
+        weights_real = self._weights_real[datacube_number].reshape((4, s_max, s_max))
         weights_diff = self._weights_diff[datacube_number].reshape((4, s[-1], s[-1]))
 
         obj_q_summed = (obj[:, ind_diff] * weights_diff).sum((1))
@@ -1763,6 +1764,7 @@ class Tomography:
         storage = self._storage
 
         s = self._object_shape_6D
+        s_max = np.max((s[1], s[2]))
 
         ind_update = xp.tile(self._circular_mask_ravel, 4)
 
@@ -1795,19 +1797,19 @@ class Tomography:
         diff_shape = ind_diff.shape[0]
 
         bincount_diff = (
-            xp.tile(ind_diff, s[1])
-            + (xp.repeat(xp.arange(s[1]), diff_shape)) * diff_max
+            xp.tile(ind_diff, s_max)
+            + (xp.repeat(xp.arange(s_max), diff_shape)) * diff_max
         )
 
         update_q_summed = xp.bincount(
             bincount_diff,
             update_reshaped.ravel(),
-            minlength=((diff_max) * s[1]),
-        ).reshape((s[1], -1))[:, ind_diff_bincount > 0]
+            minlength=((diff_max) * s_max),
+        ).reshape((s_max, -1))[:, ind_diff_bincount > 0]
 
         # update_q_summed = xp.tile(update_q_summed, (s[2] * 4, 1)) / (s[2])
-        update_q_summed = xp.tile(xp.repeat(update_q_summed, s[2], axis=0), (4, 1)) / (
-            s[2]
+        update_q_summed = xp.tile(xp.repeat(update_q_summed, s_max, axis=0), (4, 1)) / (
+            s_max
         )
 
         diff_shape_bin = update_q_summed.shape[-1]
