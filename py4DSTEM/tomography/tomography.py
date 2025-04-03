@@ -865,7 +865,7 @@ class Tomography:
                     datacube.data[a0, a1] = np.clip(
                         rotate(
                             datacube.data[a0, a1],
-                            -self._force_q_to_r_rotation_deg,
+                            self._force_q_to_r_rotation_deg,
                             reshape=False,
                             order=0,
                         ),
