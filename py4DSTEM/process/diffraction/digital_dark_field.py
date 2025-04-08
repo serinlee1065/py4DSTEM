@@ -3,7 +3,7 @@ A general note on all these functions is that they are designed for use with rot
 However, they have to date only been used with the Qx and Qy in pixels and not calibrated into reciprocal units.
 There is no reason why this should not work, but the default tolerance would need adjustment.
 
-These majority of these functions have been used and described in https://doi.org/10.1093/mam/ozae104, 
+These majority of these functions have been used and described in https://doi.org/10.1093/mam/ozae104,
 with the exception of the ones written in polar co-ordinates (which are still to be used in published work).
 """
 
