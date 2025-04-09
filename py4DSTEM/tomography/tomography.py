@@ -2214,7 +2214,7 @@ class Tomography:
             ind[:, 0],
             ind[:, 1],
             ind[:, 2],
-            s=plot_data[ind[:, 0], ind[:, 1], ind[:, 2]] / 2,
+            s=plot_data[ind[:, 1], ind[:, 0], ind[:, 2]] / 2,
             color="red",
         )
 
