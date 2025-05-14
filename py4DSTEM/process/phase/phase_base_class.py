@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from mpl_toolkits.axes_grid1 import ImageGrid
 from py4DSTEM.visualize import show_complex
-from scipy.ndimage import zoom
+from scipy.ndimage import shift, zoom
 
 try:
     import cupy as cp
@@ -686,6 +686,7 @@ class PhaseReconstruction(Custom):
 
                 # calculate CoM
                 if dp_mask is not None:
+                    dp_mask = copy_to_device(dp_mask, device)
                     intensities_mask = intensities * dp_mask
                 else:
                     intensities_mask = intensities
@@ -1350,6 +1351,9 @@ class PhaseReconstruction(Custom):
         com_fitted_y,
         positions_mask,
         crop_patterns,
+        in_place_datacube_modification,
+        shifting_interpolation_order=3,
+        return_intensities_instead=False,
     ):
         """
         Fix diffraction intensities CoM, shift to origin, and take square root
@@ -1362,77 +1366,71 @@ class PhaseReconstruction(Custom):
             Best fit horizontal center of mass gradient
         com_fitted_y: (Rx,Ry) xp.ndarray
             Best fit vertical center of mass gradient
-        positions_mask: np.ndarray, optional
+        positions_mask: np.ndarray
             Boolean real space mask to select positions in datacube to skip for reconstruction
         crop_patterns: bool
-            if True, crop patterns to avoid wrap around of patterns
-            when centering
+            If True, patterns are cropped to avoid wrap around of patterns
+        in_place_datacube_modification: bool
+            If True, the diffraction intensities are modified in-place
+        shifting_interpolation_order: int
+            Spline interpolation order used in shifting DPs to origin. Default is bi-cubic.
+        return_intensities_instead: bool
+            If True, function returns shifted intensities instead of amplitudes. Used in SSB.
 
         Returns
         -------
-        amplitudes: (Rx * Ry, Sx, Sy) np.ndarray
+        diffraction_intensities: (Rx * Ry, Sx, Sy) np.ndarray
             Flat array of normalized diffraction amplitudes
         mean_intensity: float
             Mean intensity value
+        crop_mask
+            Mask to crop diffraction patterns with
         """
 
         # explicit read-only self attributes up-front
         asnumpy = self._asnumpy
 
         mean_intensity = 0
-
-        diffraction_intensities = asnumpy(diffraction_intensities)
         com_fitted_x = asnumpy(com_fitted_x)
         com_fitted_y = asnumpy(com_fitted_y)
 
-        if positions_mask is not None:
-            number_of_patterns = np.count_nonzero(positions_mask.ravel())
+        if in_place_datacube_modification:
+            diff_intensities = diffraction_intensities
         else:
-            number_of_patterns = np.prod(diffraction_intensities.shape[:2])
+            diff_intensities = diffraction_intensities.copy()
 
         # Aggressive cropping for when off-centered high scattering angle data was recorded
         if crop_patterns:
             crop_x = int(
                 np.minimum(
-                    diffraction_intensities.shape[2] - com_fitted_x.max(),
+                    diff_intensities.shape[2] - com_fitted_x.max(),
                     com_fitted_x.min(),
                 )
             )
             crop_y = int(
                 np.minimum(
-                    diffraction_intensities.shape[3] - com_fitted_y.max(),
+                    diff_intensities.shape[3] - com_fitted_y.max(),
                     com_fitted_y.min(),
                 )
             )
 
             crop_w = np.minimum(crop_y, crop_x)
-            region_of_interest_shape = (crop_w * 2, crop_w * 2)
-            amplitudes = np.zeros(
-                (
-                    number_of_patterns,
-                    crop_w * 2,
-                    crop_w * 2,
-                ),
-                dtype=np.float32,
-            )
 
-            crop_mask = np.zeros(diffraction_intensities.shape[-2:], dtype=np.bool_)
+            crop_mask = np.zeros(diff_intensities.shape[-2:], dtype="bool")
             crop_mask[:crop_w, :crop_w] = True
             crop_mask[-crop_w:, :crop_w] = True
             crop_mask[:crop_w:, -crop_w:] = True
             crop_mask[-crop_w:, -crop_w:] = True
 
+            crop_mask_shape = (crop_w * 2, crop_w * 2)
+
         else:
             crop_mask = None
-            region_of_interest_shape = diffraction_intensities.shape[-2:]
-            amplitudes = np.zeros(
-                (number_of_patterns,) + region_of_interest_shape, dtype=np.float32
-            )
+            crop_mask_shape = diff_intensities.shape[-2:]
 
-        counter = 0
         for rx, ry in tqdmnd(
-            diffraction_intensities.shape[0],
-            diffraction_intensities.shape[1],
+            diff_intensities.shape[0],
+            diff_intensities.shape[1],
             desc="Normalizing amplitudes",
             unit="probe position",
             disable=not self._verbose,
@@ -1440,24 +1438,44 @@ class PhaseReconstruction(Custom):
             if positions_mask is not None:
                 if not positions_mask[rx, ry]:
                     continue
-            intensities = get_shifted_ar(
-                diffraction_intensities[rx, ry],
-                -com_fitted_x[rx, ry],
-                -com_fitted_y[rx, ry],
-                bilinear=True,
-                device="cpu",
-            )
 
-            if crop_patterns:
-                intensities = intensities[crop_mask].reshape(region_of_interest_shape)
+            if shifting_interpolation_order == 1:
+                # faster but may lead to gridding artifacts
+                intensities = get_shifted_ar(
+                    diff_intensities[rx, ry].astype(np.float32),
+                    -com_fitted_x[rx, ry],
+                    -com_fitted_y[rx, ry],
+                    bilinear=True,
+                    device="cpu",
+                )
+            else:
+                intensities = shift(
+                    diff_intensities[rx, ry].astype(np.float32),
+                    (-com_fitted_x[rx, ry], -com_fitted_y[rx, ry]),
+                    order=shifting_interpolation_order,
+                    mode="grid-wrap",
+                )
 
             mean_intensity += np.sum(intensities)
-            amplitudes[counter] = np.sqrt(np.maximum(intensities, 0))
-            counter += 1
+            if return_intensities_instead:
+                diff_intensities[rx, ry] = np.maximum(intensities, 0)
+            else:
+                diff_intensities[rx, ry] = np.sqrt(np.maximum(intensities, 0))
 
-        mean_intensity /= amplitudes.shape[0]
+        if positions_mask is not None:
+            diff_intensities = diff_intensities[positions_mask]
+        else:
+            qx, qy = diff_intensities.shape[-2:]
+            diff_intensities = diff_intensities.reshape((-1, qx, qy))
 
-        return amplitudes, mean_intensity, crop_mask
+        if crop_patterns:
+            diff_intensities = diff_intensities[:, crop_mask].reshape(
+                (-1,) + crop_mask_shape
+            )
+
+        mean_intensity /= diff_intensities.shape[0]
+
+        return diff_intensities, mean_intensity, crop_mask, crop_mask_shape
 
     def show_complex_CoM(
         self,
@@ -1551,6 +1569,7 @@ class PtychographicReconstruction(PhaseReconstruction):
             "semiangle_cutoff": self._semiangle_cutoff,
             "rolloff": self._rolloff,
             "object_padding_px": self._object_padding_px,
+            "object_fov_ang": self._object_fov_ang,
             "object_type": self._object_type,
             "verbose": self._verbose,
             "device": self._device,
@@ -1589,6 +1608,7 @@ class PtychographicReconstruction(PhaseReconstruction):
                 "data_transpose": self._rotation_best_transpose,
                 "positions_px": asnumpy(self._positions_px),
                 "region_of_interest_shape": self._region_of_interest_shape,
+                "amplitudes_shape": self._amplitudes_shape,
                 "num_diffraction_patterns": self._num_diffraction_patterns,
                 "sampling": self.sampling,
                 "angular_sampling": self.angular_sampling,
@@ -1730,6 +1750,7 @@ class PtychographicReconstruction(PhaseReconstruction):
         self._positions_px = xp.asarray(preprocess_md["positions_px"])
         self._angular_sampling = preprocess_md["angular_sampling"]
         self._region_of_interest_shape = preprocess_md["region_of_interest_shape"]
+        self._amplitudes_shape = preprocess_md["amplitudes_shape"]
         self._num_diffraction_patterns = preprocess_md["num_diffraction_patterns"]
         self._positions_mask = preprocess_md["positions_mask"]
 
@@ -1857,42 +1878,34 @@ class PtychographicReconstruction(PhaseReconstruction):
             else:
                 raise ValueError()
 
-            if transpose:
-                x = (x - np.ptp(x) / 2) / sampling[1]
-                y = (y - np.ptp(y) / 2) / sampling[0]
-            else:
-                x = (x - np.ptp(x) / 2) / sampling[0]
-                y = (y - np.ptp(y) / 2) / sampling[1]
             x, y = np.meshgrid(x, y, indexing="ij")
 
             if positions_offset_ang is not None:
-                if transpose:
-                    x += positions_offset_ang[0] / sampling[1]
-                    y += positions_offset_ang[1] / sampling[0]
-                else:
-                    x += positions_offset_ang[0] / sampling[0]
-                    y += positions_offset_ang[1] / sampling[1]
+                x += positions_offset_ang[0]
+                y += positions_offset_ang[1]
 
             if positions_mask is not None:
                 x = x[positions_mask]
                 y = y[positions_mask]
-        else:
-            positions -= np.mean(positions, axis=0)
-            x = positions[:, 0] / sampling[1]
-            y = positions[:, 1] / sampling[0]
+
+            positions = np.stack((x.ravel(), y.ravel()), axis=-1)
 
         if rotation_angle is not None:
-            x, y = x * np.cos(rotation_angle) + y * np.sin(rotation_angle), -x * np.sin(
-                rotation_angle
-            ) + y * np.cos(rotation_angle)
+            tf = AffineTransform(angle=rotation_angle)
+            positions = tf(positions, positions.mean(0))
 
         if transpose:
-            positions = np.array([y.ravel(), x.ravel()]).T
-        else:
-            positions = np.array([x.ravel(), y.ravel()]).T
+            positions = np.flip(positions, 1)
+            sampling = sampling[::-1]
 
-        positions -= np.min(positions, axis=0)
+        # ensure positive
+        positions -= np.min(positions, axis=0).clip(-np.inf, 0)
 
+        # finally, switch to pixels
+        positions[:, 0] /= sampling[0]
+        positions[:, 1] /= sampling[1]
+
+        # top-left padding
         if object_padding_px is None:
             float_padding = region_of_interest_shape / 2
             object_padding_px = (float_padding, float_padding)
@@ -2143,7 +2156,7 @@ class PtychographicReconstruction(PhaseReconstruction):
                 warnings.warn(
                     (
                         first_line + f"with the {reconstruction_method} algorithm, "
-                        f"with normalization_min: {normalization_min} and step _size: {step_size}, "
+                        f"with normalization_min: {normalization_min} and step_size: {step_size}, "
                         f"in batches of max {max_batch_size} measurements."
                     ),
                     UserWarning,
@@ -2176,7 +2189,7 @@ class PtychographicReconstruction(PhaseReconstruction):
                 warnings.warn(
                     (
                         first_line + f"with the {reconstruction_method} algorithm, "
-                        f"with normalization_min: {normalization_min} and step _size: {step_size}."
+                        f"with normalization_min: {normalization_min} and step_size: {step_size}."
                     ),
                     UserWarning,
                 )

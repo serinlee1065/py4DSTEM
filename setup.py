@@ -20,7 +20,7 @@ setup(
     author="Benjamin H. Savitzky",
     author_email="ben.savitzky@gmail.com",
     license="GNU GPLv3",
-    keywords="STEM 4DSTEM",
+    keywords="STEM,4DSTEM",
     python_requires=">=3.10",
     install_requires=[
         "numpy >= 1.19",
@@ -46,7 +46,7 @@ setup(
     extras_require={
         "ipyparallel": ["ipyparallel >= 6.2.4", "dill >= 0.3.3"],
         "cuda": ["cupy >= 10.0.0"],
-        "acom": ["pymatgen >= 2022", "mp-api == 0.24.1"],
+        "acom": ["pymatgen >= 2022, < 2024.8.9", "mp-api == 0.24.1"],
         "aiml": [
             "tensorflow <= 2.10.0",
             "tensorflow-addons <= 0.16.1",

@@ -1,5 +1,6 @@
 # Analysis scripts for amorphous 4D-STEM data using polar transformations.
 
+from typing import Tuple
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
@@ -10,6 +11,7 @@ from emdfile import tqdmnd
 
 def calculate_radial_statistics(
     self,
+    mask_realspace=None,
     plot_results_mean=False,
     plot_results_var=False,
     figsize=(8, 4),
@@ -26,15 +28,15 @@ def calculate_radial_statistics(
     compute the mean and standard deviation pattern by pattern, i.e. for
     diffraction signal d(x,y; q,theta) we take
 
-        d_mean_all(x,y; q) = \int_{0}^{2\pi} d(x,y; q,\theta) d\theta
-        d_var_all(x,y; q) = \int_{0}^{2\pi}
-            \( d(x,y; q,\theta) - d_mean_all(x,y; q,\theta) \)^2 d\theta
+        d_mean_all(x,y; q) = \\int_{0}^{2\\pi} d(x,y; q,\\theta) d\\theta
+        d_var_all(x,y; q) = \\int_{0}^{2\\pi}
+            \\( d(x,y; q,\\theta) - d_mean_all(x,y; q,\\theta) \\)^2 d\\theta
 
     Then we find the mean and variance profiles by taking the means of these
     quantities over all scan positions:
 
-        d_mean(q) = \sum_{x,y} d_mean_all(x,y; q)
-        d_var(q) = \sum_{x,y} d_var_all(x,y; q)
+        d_mean(q) = \\sum_{x,y} d_mean_all(x,y; q)
+        d_var(q) = \\sum_{x,y} d_var_all(x,y; q)
 
     and the normalized variance is d_var/d_mean.
 
@@ -91,16 +93,30 @@ def calculate_radial_statistics(
         unit=" probe positions",
         disable=not progress_bar,
     ):
-        self.radial_all[rx, ry] = np.mean(self.data[rx, ry], axis=0)
-        self.radial_all_std[rx, ry] = np.sqrt(
-            np.mean((self.data[rx, ry] - self.radial_all[rx, ry][None]) ** 2, axis=0)
+        if mask_realspace is None or mask_realspace[rx, ry]:
+            self.radial_all[rx, ry] = np.mean(self.data[rx, ry], axis=0)
+            self.radial_all_std[rx, ry] = np.sqrt(
+                np.mean(
+                    (self.data[rx, ry] - self.radial_all[rx, ry][None]) ** 2, axis=0
+                )
+            )
+
+    if mask_realspace is None:
+        self.radial_mean = np.mean(self.radial_all, axis=(0, 1))
+        self.radial_var = np.mean(
+            (self.radial_all - self.radial_mean[None, None]) ** 2, axis=(0, 1)
         )
 
-    self.radial_mean = np.mean(self.radial_all, axis=(0, 1))
-    self.radial_var = np.mean(
-        (self.radial_all - self.radial_mean[None, None]) ** 2, axis=(0, 1)
-    )
+    else:
+        self.radial_mean = np.sum(self.radial_all, axis=(0, 1)) / np.sum(mask_realspace)
+        self.radial_var = np.zeros_like(self.radial_mean)
+        for rx in range(self._datacube.shape[0]):
+            for ry in range(self._datacube.shape[1]):
+                if mask_realspace[rx, ry]:
+                    self.radial_var += (self.radial_all[rx, ry] - self.radial_mean) ** 2
+        self.radial_var /= np.sum(mask_realspace)
 
+    # Compute normalized variance
     self.radial_var_norm = np.copy(self.radial_var)
     sub = self.radial_mean > 0.0
     self.radial_var_norm[sub] /= self.radial_mean[sub] ** 2
@@ -209,6 +225,8 @@ def plot_radial_var_norm(
 
 def calculate_pair_dist_function(
     self,
+    RxRy=None,
+    hxwy=None,
     k_min=0.05,
     k_max=None,
     k_width=0.25,
@@ -246,19 +264,26 @@ def calculate_pair_dist_function(
     filters are optionally applied. The structure factor is then inverted into
     the reduced pair distribution function g(r) using
 
-        g(r) = \frac{2}{\pi) \int sin( 2\pi r k ) S(k) dk
+        g(r) = \\frac{2}{\\pi) \\int sin( 2\\pi r k ) S(k) dk
 
     The value of the integral is (optionally) damped to zero at the origin to
     match the physical requirement that this condition holds. Finally, the
     full PDF G(r) is computed if a known density is provided, using
 
-        G(r) = 1 + [ \frac{2}{\pi} * g(r) / ( 4\pi * D * r dr ) ]
+        G(r) = 1 + [ \\frac{2}{\\pi} * g(r) / ( 4\\pi * D * r dr ) ]
 
     This follows the methods described in [@cophus TODO ADD CITATION].
 
 
     Parameters
     ----------
+    RxRy : None or 2-tuple
+        None calculates on the whole radial average for dataset
+        A 2-tuple calculates on the radial profile for one scan pixel defined by Rx and Ry
+        or gives the top left corner of a box to average with widths defined by hxwy
+    hxwy : None or 2-tuple
+        A 2-tuple gives the height and width of a box to average anchored at Rx, Ry
+        hx and wy need to be larger than 1
     k_min : number
         Minimum scattering vector to include in the calculation
     k_max : number or None
@@ -306,13 +331,20 @@ def calculate_pair_dist_function(
     k = self.qq
     dk = k[1] - k[0]
     k2 = k**2
-    Ik = self.radial_mean
+    if RxRy == None:
+        Ik = self.radial_mean
+    elif RxRy != None and hxwy == None:
+        Ik = self.radial_all[RxRy[0], RxRy[1]]
+    elif RxRy != None and hxwy != None:
+        Ik = self.radial_all[
+            RxRy[0] : RxRy[0] + hxwy[0], RxRy[1] : RxRy[1] + hxwy[1]
+        ].mean(axis=(0, 1))
     int_mean = np.mean(Ik)
     sub_fit = k >= k_min
 
     # initial guesses for background coefs
-    const_bg = np.min(self.radial_mean) / int_mean
-    int0 = np.median(self.radial_mean) / int_mean - const_bg
+    const_bg = np.min(Ik) / int_mean
+    int0 = np.median(Ik) / int_mean - const_bg
     sigma0 = np.mean(k)
     coefs = [const_bg, int0, sigma0, int0, sigma0]
     lb = [0, 0, 0, 0, 0]
@@ -437,7 +469,7 @@ def calculate_pair_dist_function(
 
     # Plots
     if plot_background_fits:
-        fig, ax = self.plot_background_fits(figsize=figsize, returnfig=True)
+        fig, ax = self.plot_background_fits(Ik=Ik, figsize=figsize, returnfig=True)
         if returnfig:
             ans.append((fig, ax))
 
@@ -462,16 +494,24 @@ def calculate_pair_dist_function(
 
 def plot_background_fits(
     self,
+    Ik=None,
     figsize=(8, 4),
     returnfig=False,
 ):
     """
     TODO
+    Ik : numpy array
+        Ik calculated in calculate_pair_dist_function. Defaults to self.radial_mean for a pdf calculated
+        over whole dataset, but correctly calculated for sub areas, if defined
     """
+    if isinstance(Ik, np.ndarray):
+        pass
+    else:
+        Ik = self.radial_mean
     fig, ax = plt.subplots(figsize=figsize)
     ax.plot(
         self.qq,
-        self.radial_mean,
+        Ik,
         color="k",
     )
     ax.plot(
@@ -486,8 +526,8 @@ def plot_background_fits(
     ax.set_ylabel("I(k) and Background Fit Estimates")
     ax.set_ylim(
         (
-            np.min(self.radial_mean[self.radial_mean > 0]) * 0.8,
-            np.max(self.radial_mean * self.Sk_mask) * 1.25,
+            np.min(Ik[Ik > 0]) * 0.8,
+            np.max(Ik * self.Sk_mask) * 1.25,
         )
     )
     ax.set_yscale("log")
@@ -924,3 +964,80 @@ def scattering_model(k2, *coefs):
     # int1*np.exp(k2/(-2*sigma1**2))
 
     return int_model
+
+
+def background_pca(
+    self,
+    pca_index: int = 0,
+    n_components: int = None,
+    intensity_range: Tuple[float, float] = (0, 1),
+    normalize_mean: bool = True,
+    normalize_std: bool = True,
+    plot_result: bool = True,
+    plot_coef: bool = False,
+):
+    """
+    Generate PCA decompositions of the background signal.
+    This function must be run after `calculate_radial_statistics`.
+
+    Parameters
+    --------
+    pca_index: int
+        index of PCA component and loadings to return
+    intensity_range: tuple (float, float)
+        intensity range for plotting
+    normalize_mean: bool
+        if True, normalize mean of radial data before PCA
+    normalize_std: bool
+        if True, normalize standard deviation of radial data before PCA
+    plot_results: bool
+        if True, plot results
+    plot_coef: bool
+        if True, plot radial PCA component selected
+
+    Returns
+    --------
+    im_pca: np,array
+        rgb image array
+    coef_pca: np.array
+        radial PCA component selected
+    """
+
+    from sklearn.decomposition import PCA
+
+    # PCA decomposition
+    shape = self.radial_all.shape
+    A = np.reshape(self.radial_all, (shape[0] * shape[1], shape[2]))
+    if normalize_mean:
+        A -= np.mean(A, axis=0)
+    if normalize_std:
+        A /= np.std(A, axis=0)
+
+    pca = PCA(n_components=np.maximum(pca_index + 1, 2))
+    pca.fit(A)
+
+    components = pca.components_
+    loadings = pca.transform(A)
+
+    # output image data
+    sig_pca = np.reshape(loadings[:, pca_index], shape[0:2])
+    sig_pca -= intensity_range[0]
+    sig_pca /= intensity_range[1] - intensity_range[0]
+    sig_pca = np.clip(sig_pca, 0, 1)
+    im_pca = np.tile(sig_pca[:, :, None], (1, 1, 3))
+
+    # output PCA coefficient
+    coef_pca = np.vstack((self.radial_bins, components[pca_index, :])).T
+
+    if plot_result:
+        fig, ax = plt.subplots(figsize=(8, 8))
+        ax.imshow(
+            im_pca,
+            vmin=0,
+            vmax=5,
+        )
+    if plot_coef:
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.plot(coef_pca[:, 0], coef_pca[:, 1])
+
+    return im_pca, coef_pca
