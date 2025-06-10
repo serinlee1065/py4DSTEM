@@ -4,7 +4,9 @@ import numpy as np
 from typing import Optional
 from warnings import warn
 
+from emdfile import Metadata
 from py4DSTEM.data import DiffractionSlice, Data
+from py4DSTEM.visualize import show
 from scipy.ndimage import binary_opening, binary_dilation, distance_transform_edt
 
 
@@ -43,6 +45,11 @@ class Probe(DiffractionSlice, Data):
             self, name=name, data=data, slicelabels=["probe", "kernel"]
         )
 
+        # initialize metadata params
+        self.metadata = Metadata(name="params")
+        self.alpha = None
+        self.origin = None
+
     ## properties
 
     @property
@@ -62,6 +69,22 @@ class Probe(DiffractionSlice, Data):
     def kernel(self, x):
         assert x.shape == (self.data.shape[1:])
         self.data[1, :, :] = x
+
+    @property
+    def alpha(self):
+        return self.metadata["params"]["alpha"]
+
+    @alpha.setter
+    def alpha(self, x):
+        self.metadata["params"]["alpha"] = x
+
+    @property
+    def origin(self):
+        return self.metadata["params"]["origin"]
+
+    @origin.setter
+    def origin(self, x):
+        self.metadata["params"]["origin"] = x
 
     # read
     @classmethod
@@ -181,8 +204,11 @@ class Probe(DiffractionSlice, Data):
         thresh_lower=0.01,
         thresh_upper=0.99,
         N=100,
-        returncalc=True,
         data=None,
+        zero_vacuum=True,
+        alpha_max=1.2,
+        returncalc=True,
+        plot=True,
     ):
         """
         Finds the center and radius of an average probe image.
@@ -207,12 +233,20 @@ class Probe(DiffractionSlice, Data):
             the upper limit of threshold values
         N : int
             the number of thresholds / masks to use
-        returncalc : True
-            toggles returning the answer
         data : 2d array, optional
             if passed, uses this 2D array in place of the probe image when
             performing the computation. This also supresses storing the
             results in the Probe's calibration metadata
+        zero_vacuum : bool
+            if True, sets pixels beyond alpha_max * the semiconvergence angle
+            to zero. Ignored if `data` is not None
+        alpha_max : number
+            sets the maximum scattering angle in the probe image, beyond which
+            values are set to zero if `zero_vacuum` is True
+        returncalc : True
+            toggles returning the answer
+        plot : bool
+            toggles visualizing results
 
         Returns
         -------
@@ -244,9 +278,11 @@ class Probe(DiffractionSlice, Data):
         mask = im > immax * thresh
         x0, y0 = get_CoM(im * mask)
 
-        # Store metadata and return
+        # Store metadata
         ans = r, x0, y0
         if data is None:
+            self.alpha = r
+            self.origin = (x0, y0)
             try:
                 self.calibration.set_probe_param(ans)
             except AttributeError:
@@ -254,8 +290,103 @@ class Probe(DiffractionSlice, Data):
                     f"Couldn't store the probe parameters in metadata as no calibration was found for this Probe instance, {self}"
                 )
                 pass
+
+        if data is None and zero_vacuum:
+            self.zero_vacuum(alpha_max=alpha_max)
+
+        # show result
+        if plot:
+            show(im, circle={"center": (x0, y0), "R": r, "fill": True, "alpha": 0.36})
+
+        # return
         if returncalc:
             return ans
+
+    def zero_vacuum(
+        self,
+        alpha_max=1.2,
+    ):
+        """
+        Sets pixels outside of the probe's central disk to zero using a
+        hard mask at alpha*alpha_max.  To use a continuous mask, try
+        zero_vacuum_sinusoid.
+
+        The probe origin and convergence semiangle must be set for this
+        method to run - these can be set using `measure_disk`. Pixels are
+        defined as outside the central disk if their distance from the origin
+        exceeds the semiconvergence angle * alpha_max.
+
+        Parameters
+        ----------
+        alpha_max : number
+            Pixels farther than this number times the semiconvergence angle
+            from the origin are set to zero
+        """
+        # validate inputs
+        assert (
+            self.alpha is not None
+        ), "no probe semiconvergence angle found; try running `Probe.measure_disk`"
+        assert (
+            self.origin is not None
+        ), "no probe origin found; try running `Probe.measure_disk`"
+        # make a mask
+        qyy, qxx = np.meshgrid(np.arange(self.shape[1]), np.arange(self.shape[0]))
+        qrr = np.hypot(qxx - self.origin[0], qyy - self.origin[1])
+        mask = qrr < self.alpha * alpha_max
+        # zero the vacuum
+        self.probe *= mask
+        pass
+
+    def zero_vacuum_sinusoid(self, s=0.1, w=1, p=1, update_inplace=True):
+        """
+        Sets pixels outside of the probe's central disk to zero using a
+        continuous mask with sinusoidal^p decay over the range
+        [alpha+s, alpha+s+w] for semiangle alpha.
+
+        The probe origin and convergence semiangle must be set for this
+        method to run - these can be set using `measure_disk`. Pixels are
+        defined as outside the central disk if their distance from the origin
+        exceeds the semiconvergence angle * alpha_max.
+
+        Parameters
+        ----------
+        s : number
+            Damping begins at radius alpha*(1+s)
+        w : number
+            Width of damping window, i.e. damping ends at alpha*(1+s)+w
+        p : number
+            Scaling power for damping sindusoid
+        update_inplace : bool
+            Toggle updating the self.probe value or returning it only
+        """
+        # validate inputs
+        assert (
+            self.alpha is not None
+        ), "no probe semiconvergence angle found; try running `Probe.measure_disk`"
+        assert (
+            self.origin is not None
+        ), "no probe origin found; try running `Probe.measure_disk`"
+        # prepare vars
+        qx0, qy0 = self.origin
+        alpha = self.alpha
+        probe = self.probe
+        Q_Nx, Q_Ny = probe.shape
+        # setup mesh
+        qyy, qxx = np.meshgrid(np.arange(Q_Ny), np.arange(Q_Nx))
+        qrr = np.hypot(qxx - qx0, qyy - qy0)
+        # find damping curve
+        r = alpha * (1 + s)
+        _w = alpha * w
+        f = 1 + (r - qrr) / _w
+        f = np.minimum(np.maximum(f, 0), 1)
+        f = np.sin(f) ** p
+        # scale probe
+        probe *= f
+        # update
+        if update_inplace:
+            self.probe = probe
+        # return scaled probe
+        return probe
 
     # Kernel generation methods
 
@@ -322,15 +453,9 @@ class Probe(DiffractionSlice, Data):
         # check for the origin
         if origin is None:
             try:
-                x = self.calibration.get_probe_params()
+                origin = self.origin
             except AttributeError:
-                x = None
-            finally:
-                if x is None:
-                    origin = None
-                else:
-                    r, x, y = x
-                    origin = (x, y)
+                origin = None
 
         # get the data
         probe = data if data is not None else self.probe
@@ -514,7 +639,7 @@ class Probe(DiffractionSlice, Data):
             np.mod(np.arange(Q_Ny) + Q_Ny // 2, Q_Ny) - Q_Ny // 2,
             np.mod(np.arange(Q_Nx) + Q_Nx // 2, Q_Nx) - Q_Nx // 2,
         )
-        qr = np.sqrt(qx**2 + qy**2)
+        qr = np.hypot(qx, qy)
         # Calculate sigmoid
         if type == "logistic":
             r0 = 0.5 * (ro + ri)

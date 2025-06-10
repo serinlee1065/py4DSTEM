@@ -12,6 +12,7 @@ from py4DSTEM.process.phase.utils import (
     bilinear_resample,
     copy_to_device,
     fft_shift,
+    fourier_rotate_volume,
     generate_batches,
     partition_list,
     rotate_point,
@@ -48,14 +49,24 @@ class ObjectNDMethodsMixin:
         xp = self._xp
 
         object_padding_px = self._object_padding_px
+        object_fov_ang = self._object_fov_ang
         region_of_interest_shape = self._region_of_interest_shape
 
         if initial_object is None:
-            pad_x = object_padding_px[0][1]
-            pad_y = object_padding_px[1][1]
-            p, q = np.round(np.max(positions_px, axis=0))
-            p = np.max([np.round(p + pad_x), region_of_interest_shape[0]]).astype("int")
-            q = np.max([np.round(q + pad_y), region_of_interest_shape[1]]).astype("int")
+            if object_fov_ang is None:
+                pad_x = object_padding_px[0][1]
+                pad_y = object_padding_px[1][1]
+                p, q = np.round(np.max(positions_px, axis=0))
+                p = np.max([np.round(p + pad_x), region_of_interest_shape[0]]).astype(
+                    "int"
+                )
+                q = np.max([np.round(q + pad_y), region_of_interest_shape[1]]).astype(
+                    "int"
+                )
+            else:
+                p, q = np.ceil(
+                    np.array(object_fov_ang) / np.array(self.sampling)
+                ).astype("int")
             if object_type == "potential":
                 _object = xp.zeros((p, q), dtype=xp.float32)
             elif object_type == "complex":
@@ -277,6 +288,11 @@ class ObjectNDMethodsMixin:
             else:
                 self.error_iterations = []
                 self._exit_waves = None
+        else:
+            # reset=False first start
+            if not hasattr(self, "error"):
+                self.error_iterations = []
+                self._exit_waves = None
 
     @property
     def object_fft(self):
@@ -397,14 +413,24 @@ class Object2p5DMethodsMixin:
         xp = self._xp
 
         object_padding_px = self._object_padding_px
+        object_fov_ang = self._object_fov_ang
         region_of_interest_shape = self._region_of_interest_shape
 
         if initial_object is None:
-            pad_x = object_padding_px[0][1]
-            pad_y = object_padding_px[1][1]
-            p, q = np.round(np.max(positions_px, axis=0))
-            p = np.max([np.round(p + pad_x), region_of_interest_shape[0]]).astype("int")
-            q = np.max([np.round(q + pad_y), region_of_interest_shape[1]]).astype("int")
+            if object_fov_ang is None:
+                pad_x = object_padding_px[0][1]
+                pad_y = object_padding_px[1][1]
+                p, q = np.round(np.max(positions_px, axis=0))
+                p = np.max([np.round(p + pad_x), region_of_interest_shape[0]]).astype(
+                    "int"
+                )
+                q = np.max([np.round(q + pad_y), region_of_interest_shape[1]]).astype(
+                    "int"
+                )
+            else:
+                p, q = np.ceil(
+                    np.array(object_fov_ang) / np.array(self.sampling)
+                ).astype("int")
             if object_type == "potential":
                 _object = xp.zeros((num_slices, p, q), dtype=xp.float32)
             elif object_type == "complex":
@@ -818,7 +844,7 @@ class Object3DMethodsMixin:
         normalized_array = array / xp.asarray(voxels_in_slice)[:, None, None]
         return xp.repeat(normalized_array, voxels_per_slice, axis=0)[:output_z]
 
-    def _rotate_zxy_volume(
+    def _rotate_zxy_volume_real(
         self,
         volume_array,
         rot_matrix,
@@ -838,9 +864,39 @@ class Object3DMethodsMixin:
         out_center = tf @ in_center
         offset = in_center - out_center
 
-        volume = affine_transform(volume, tf, offset=offset, order=order)
+        volume = affine_transform(
+            volume,
+            tf,
+            offset=offset,
+            order=order,
+        )
 
         return volume
+
+    def _rotate_zxy_volume_fourier(
+        self,
+        volume_array,
+        rot_matrix,
+    ):
+        """ """
+
+        xp = self._xp
+        swap_zxy_to_xyz = self._swap_zxy_to_xyz
+        tf = swap_zxy_to_xyz.T @ rot_matrix.T @ swap_zxy_to_xyz
+
+        return fourier_rotate_volume(volume_array, tf, xp=xp).real
+
+    def _rotate_zxy_volume(
+        self,
+        volume_array,
+        rot_matrix,
+        use_fourier_rotation,
+        order=3,
+    ):
+        if use_fourier_rotation:
+            return self._rotate_zxy_volume_fourier(volume_array, rot_matrix)
+        else:
+            return self._rotate_zxy_volume_real(volume_array, rot_matrix, order=order)
 
     def _initialize_object(
         self,
@@ -853,14 +909,24 @@ class Object3DMethodsMixin:
         # explicit read-only self attributes up-front
         xp = self._xp
         object_padding_px = self._object_padding_px
+        object_fov_ang = self._object_fov_ang
         region_of_interest_shape = self._region_of_interest_shape
 
         if initial_object is None:
-            pad_x = object_padding_px[0][1]
-            pad_y = object_padding_px[1][1]
-            p, q = np.round(np.max(positions_px, axis=0))
-            p = np.max([np.round(p + pad_x), region_of_interest_shape[0]]).astype("int")
-            q = np.max([np.round(q + pad_y), region_of_interest_shape[1]]).astype("int")
+            if object_fov_ang is None:
+                pad_x = object_padding_px[0][1]
+                pad_y = object_padding_px[1][1]
+                p, q = np.round(np.max(positions_px, axis=0))
+                p = np.max([np.round(p + pad_x), region_of_interest_shape[0]]).astype(
+                    "int"
+                )
+                q = np.max([np.round(q + pad_y), region_of_interest_shape[1]]).astype(
+                    "int"
+                )
+            else:
+                p, q = np.ceil(
+                    np.array(object_fov_ang) / np.array(self.sampling)
+                ).astype("int")
 
             if main_tilt_axis == "vertical":
                 _object = xp.zeros((q, p, q), dtype=xp.float32)
@@ -894,6 +960,7 @@ class Object3DMethodsMixin:
             obj = self._rotate_zxy_volume(
                 obj,
                 rot_matrix=rot_matrix,
+                use_fourier_rotation=False,
             )
 
         start_v, end_v = v_lims
@@ -948,6 +1015,7 @@ class Object3DMethodsMixin:
             obj = self._rotate_zxy_volume(
                 obj,
                 rot_matrix=orientation_matrix,
+                use_fourier_rotation=False,
             )
 
         start_v, end_v = vertical_lims
@@ -987,6 +1055,7 @@ class ProbeMethodsMixin:
         device = self._device
 
         crop_mask = self._crop_mask
+        crop_mask_shape = self._crop_mask_shape
         region_of_interest_shape = self._region_of_interest_shape
         sampling = self.sampling
         energy = self._energy
@@ -999,17 +1068,6 @@ class ProbeMethodsMixin:
                 vacuum_probe_intensity = xp.asarray(
                     vacuum_probe_intensity, dtype=xp.float32
                 )
-
-                sx, sy = vacuum_probe_intensity.shape
-                tx, ty = region_of_interest_shape
-                if sx != tx or sy != ty:
-                    vacuum_probe_intensity = bilinear_resample(
-                        vacuum_probe_intensity,
-                        output_size=(tx, ty),
-                        vectorized=True,
-                        conserve_array_sums=True,
-                        xp=xp,
-                    )
 
                 probe_x0, probe_y0 = get_CoM(
                     vacuum_probe_intensity,
@@ -1025,7 +1083,18 @@ class ProbeMethodsMixin:
 
                 if crop_patterns:
                     vacuum_probe_intensity = vacuum_probe_intensity[crop_mask].reshape(
-                        region_of_interest_shape
+                        crop_mask_shape
+                    )
+
+                sx, sy = vacuum_probe_intensity.shape
+                tx, ty = region_of_interest_shape
+                if sx != tx or sy != ty and self._resample_exit_waves is True:
+                    vacuum_probe_intensity = bilinear_resample(
+                        vacuum_probe_intensity,
+                        output_size=(tx, ty),
+                        vectorized=True,
+                        conserve_array_sums=True,
+                        xp=xp,
                     )
 
             _probe = (
@@ -1413,10 +1482,10 @@ class ProbeMixedMethodsMixin:
             for i_probe in range(1, num_probes):
                 shift_x = xp.exp(
                     -2j * np.pi * (xp.random.rand() - 0.5) * xp.fft.fftfreq(sx)
-                )
+                ).astype(xp.complex64)
                 shift_y = xp.exp(
                     -2j * np.pi * (xp.random.rand() - 0.5) * xp.fft.fftfreq(sy)
-                )
+                ).astype(xp.complex64)
                 _probes[i_probe] = (
                     _probes[i_probe - 1] * shift_x[:, None] * shift_y[None]
                 )
@@ -1442,6 +1511,112 @@ class ObjectNDProbeMethodsMixin:
     """
     Mixin class for methods applicable to 2D, 2.5D, and 3D objects using a single probe.
     """
+
+    def slim_preprocess(
+        self,
+        amplitudes,
+        probe_array,
+        object_array,
+        positions_px,
+        reciprocal_sampling=None,
+        angular_sampling=None,
+        store_initial_arrays=True,
+    ):
+        """
+        Alternative function for ptychographic preprocessing.
+        This accepts the necessary arrays, and simply sets the appropriate attributes.
+
+        Parameters
+        ----------
+        amplitudes: np.ndarray
+            Corner-centered diffraction amplitudes with dimension (N,Qx,Qy)
+        probe_array: np.ndarray
+            Corner-centered initial guess for complex-valued probe of dimensions (...,Qx,Qy)
+        object_array: np.ndarray
+            Initial guess for object of dimensions (...,Px,Py)
+        positions_px: np.ndarray
+            Initial guess for probe positions in pixels of dimensions (N,2)
+        reciprocal_sampling: (float,float), optional
+            (dk_x, dk_y) reciprocal space sampling in inverse Angstroms
+        angular_sampling: (float,float), optional
+            (dalpha_x, dalpha_y) angluar sampling in mrad
+        store_initial_arrays: bool
+            If True, preprocesed object and probe arrays are stored allowing reset=True in reconstruct.
+
+        Returns
+        --------
+        self: PtychographicReconstruction
+            Self to accommodate chaining
+        """
+
+        xp = self._xp
+        xp_storage = self._xp_storage
+
+        # attach arrays
+        self._amplitudes = xp_storage.asarray(amplitudes, dtype=xp_storage.float32)
+        self._probe = xp.asarray(probe_array, dtype=xp.complex64)
+        self._object = xp.asarray(
+            object_array,
+            dtype=xp.complex64 if self._object_type == "complex" else xp.float32,
+        )
+        self._positions_px = xp_storage.asarray(positions_px, dtype=xp_storage.float32)
+
+        # specify sampling
+        if angular_sampling is None and reciprocal_sampling is None:
+            raise ValueError(
+                "One of angular or reciprocal calibration has to be specified."
+            )
+
+        wavelength = electron_wavelength_angstrom(self._energy)
+        if angular_sampling is not None:
+            if reciprocal_sampling is not None:
+                raise ValueError(
+                    "Only one of angular or reciprocal calibration can be specified."
+                )
+            self._angular_sampling = tuple(angular_sampling)
+            self._reciprocal_sampling = tuple(
+                d_alpha / wavelength / 1e3 for d_alpha in self._angular_sampling
+            )
+        else:
+            self._reciprocal_sampling = tuple(reciprocal_sampling)
+            self._angular_sampling = tuple(
+                d_k * wavelength * 1e3 for d_k in self._reciprocal_sampling
+            )
+
+        # necessary amplitude attributes
+        self._num_diffraction_patterns = self._amplitudes.shape[0]
+        self._amplitudes_shape = self._amplitudes.shape[-2:]
+        self._mean_diffraction_intensity = (self._amplitudes**2).sum((-1, -2)).mean(0)
+
+        # necessary probe attributes
+        self._region_of_interest_shape = self._probe.shape[-2:]
+        self._probe_initial_aperture = None
+
+        # necessary object attributes
+        self._object_shape = self._object.shape[-2:]
+        self._object_fov_mask_inverse = np.full(self._object_shape, False)
+
+        # necessary positions attributes
+        self._positions_px_initial = self._positions_px.copy()
+        self._positions_px_initial_com = self._positions_px.mean(0)
+
+        # necessary general attributes
+        self._resample_exit_waves = False
+        self._rotation_best_transpose = False
+        self._rotation_best_rad = 0
+        self._preprocessed = True
+
+        # necessary restarting attributes
+        if store_initial_arrays:
+            self._probe_initial = self._probe.copy()
+            self._probe_initial_aperture = xp.abs(xp.fft.fft2(self._probe))
+
+            self._object_initial = self._object.copy()
+            self._object_type_initial = self._object_type
+
+            self._positions_initial = self.positions
+
+        return self
 
     def _return_shifted_probes(self, current_probe, positions_px_fractional):
         """Simple utility to de-duplicate _overlap_projection"""
@@ -1537,7 +1712,9 @@ class ObjectNDProbeMethodsMixin:
 
         return self
 
-    def _gradient_descent_fourier_projection(self, amplitudes, overlap, fourier_mask):
+    def _gradient_descent_fourier_projection(
+        self, amplitudes, overlap, fourier_mask, virtual_detector_masks
+    ):
         """
         Ptychographic fourier projection method for GD method.
 
@@ -1550,6 +1727,9 @@ class ObjectNDProbeMethodsMixin:
         fourier_mask: np.ndarray
             Mask to apply at the detector-plane for zeroing-out unreliable gradients
             Useful when detector has artifacts such as dead-pixels
+        virtual_detector_masks: np.ndarray
+            List of corner-centered boolean masks for binning forward model exit waves,
+            to allow comparison with arbitrary geometry detector datasets.
 
         Returns
         --------
@@ -1573,14 +1753,46 @@ class ObjectNDProbeMethodsMixin:
                 xp=xp,
             )
 
-        fourier_overlap *= fourier_mask
-        farfield_amplitudes = self._return_farfield_amplitudes(fourier_overlap)
-        error = xp.sum(xp.abs(amplitudes - farfield_amplitudes) ** 2)
-        fourier_modified_overlap = amplitudes * xp.exp(1j * xp.angle(fourier_overlap))
+        if fourier_mask is not None:
+            fourier_overlap *= fourier_mask
 
-        fourier_modified_overlap = (
-            fourier_modified_overlap - fourier_overlap
-        ) * fourier_mask
+        if virtual_detector_masks is not None:
+            mask_sums = virtual_detector_masks.sum((-1, -2))
+            inverse_mask = (1 - virtual_detector_masks.sum(0)).astype(xp.bool_)
+            abs_fourier_overlap = self._return_farfield_amplitudes(fourier_overlap)
+            old_fourier_overlap_sum = xp.sum(abs_fourier_overlap**2)
+            fourier_overlap[..., inverse_mask] = 0.0
+
+            fourier_overlap_binned = xp.full_like(
+                fourier_overlap, fill_value=1e-16, dtype=xp.float32
+            )
+            for mask, mask_sum in zip(virtual_detector_masks, mask_sums):
+                val = xp.sqrt(
+                    xp.sum(abs_fourier_overlap**2 * mask, axis=(-1, -2)) / mask_sum
+                )
+                fourier_overlap_binned[..., mask] = val[:, None]
+
+            new_fourier_overlap_sum = xp.sum(xp.abs(fourier_overlap) ** 2)
+            fourier_overlap_binned *= xp.sqrt(
+                old_fourier_overlap_sum / new_fourier_overlap_sum
+            )
+            fourier_modified_overlap = (
+                fourier_overlap * amplitudes / fourier_overlap_binned
+            )
+            farfield_amplitudes = self._return_farfield_amplitudes(
+                fourier_overlap_binned
+            )
+        else:
+            fourier_modified_overlap = amplitudes * xp.exp(
+                1j * xp.angle(fourier_overlap)
+            )
+            farfield_amplitudes = self._return_farfield_amplitudes(fourier_overlap)
+
+        error = xp.sum(xp.abs(amplitudes - farfield_amplitudes) ** 2)
+        fourier_modified_overlap = fourier_modified_overlap - fourier_overlap
+
+        if fourier_mask is not None:
+            fourier_modified_overlap *= fourier_mask
 
         # resample back to region_of_interest_shape, note: this needs to happen in reciprocal-space
         if self._resample_exit_waves:
@@ -1602,6 +1814,7 @@ class ObjectNDProbeMethodsMixin:
         overlap,
         exit_waves,
         fourier_mask,
+        virtual_detector_masks,
         projection_a,
         projection_b,
         projection_c,
@@ -1633,6 +1846,9 @@ class ObjectNDProbeMethodsMixin:
             Mask to apply at the detector-plane for zeroing-out unreliable gradients
             Useful when detector has artifacts such as dead-pixels
             Currently not implemented for projection-sets
+        virtual_detector_masks: np.ndarray
+            List of corner-centered boolean masks for binning forward model exit waves,
+            to allow comparison with arbitrary geometry detector datasets.
         projection_a: float
         projection_b: float
         projection_c: float
@@ -1646,6 +1862,9 @@ class ObjectNDProbeMethodsMixin:
         """
 
         if fourier_mask is not None:
+            raise NotImplementedError()
+
+        if virtual_detector_masks is not None:
             raise NotImplementedError()
 
         xp = self._xp
@@ -1705,6 +1924,7 @@ class ObjectNDProbeMethodsMixin:
         amplitudes,
         exit_waves,
         fourier_mask,
+        virtual_detector_masks,
         use_projection_scheme,
         projection_a,
         projection_b,
@@ -1727,6 +1947,9 @@ class ObjectNDProbeMethodsMixin:
         fourier_mask: np.ndarray
             Mask to apply at the detector-plane for zeroing-out unreliable gradients
             Useful when detector has artifacts such as dead-pixels
+        virtual_detector_masks: np.ndarray
+            List of corner-centered boolean masks for binning forward model exit waves,
+            to allow comparison with arbitrary geometry detector datasets.
         use_projection_scheme: bool,
             If True, use generalized projection update
         projection_a: float
@@ -1763,6 +1986,7 @@ class ObjectNDProbeMethodsMixin:
                 overlap,
                 exit_waves,
                 fourier_mask,
+                virtual_detector_masks,
                 projection_a,
                 projection_b,
                 projection_c,
@@ -1773,6 +1997,7 @@ class ObjectNDProbeMethodsMixin:
                 amplitudes,
                 overlap,
                 fourier_mask,
+                virtual_detector_masks,
             )
 
         return shifted_probes, object_patches, overlap, exit_waves, error
@@ -2259,6 +2484,65 @@ class Object2p5DProbeMethodsMixin:
     Overwrites ObjectNDProbeMethodsMixin.
     """
 
+    def slim_preprocess(
+        self,
+        amplitudes,
+        probe_array,
+        object_array,
+        positions_px,
+        reciprocal_sampling=None,
+        angular_sampling=None,
+        store_initial_arrays=True,
+    ):
+        """
+        Alternative function for ptychographic preprocessing.
+        This accepts the necessary arrays, and simply sets the appropriate attributes.
+
+        Parameters
+        ----------
+        amplitudes: np.ndarray
+            Corner-centered diffraction amplitudes with dimension (N,Qx,Qy)
+        probe_array: np.ndarray
+            Corner-centered initial guess for complex-valued probe of dimensions (...,Qx,Qy)
+        object_array: np.ndarray
+            Initial guess for object of dimensions (...,Px,Py)
+        positions_px: np.ndarray
+            Initial guess for probe positions in pixels of dimensions (N,2)
+        reciprocal_sampling: (float,float), optional
+            (dk_x, dk_y) reciprocal space sampling in inverse Angstroms
+        angular_sampling: (float,float), optional
+            (dalpha_x, dalpha_y) angluar sampling in mrad
+        store_initial_arrays: bool
+            If True, preprocesed object and probe arrays are stored allowing reset=True in reconstruct.
+
+        Returns
+        --------
+        self: PtychographicReconstruction
+            Self to accommodate chaining
+        """
+
+        self = ObjectNDProbeMethodsMixin.slim_preprocess(
+            self,
+            amplitudes,
+            probe_array,
+            object_array,
+            positions_px,
+            reciprocal_sampling=reciprocal_sampling,
+            angular_sampling=angular_sampling,
+            store_initial_arrays=store_initial_arrays,
+        )
+
+        self._propagator_arrays = self._precompute_propagator_arrays(
+            self._region_of_interest_shape,
+            self.sampling,
+            self._energy,
+            self._slice_thicknesses,
+            self._theta_x,
+            self._theta_y,
+        )
+
+        return self
+
     def _overlap_projection(
         self,
         current_object,
@@ -2701,7 +2985,9 @@ class ObjectNDProbeMixedMethodsMixin:
         xp = self._xp
         return xp.sqrt(xp.sum(xp.abs(fourier_overlap) ** 2, axis=1))
 
-    def _gradient_descent_fourier_projection(self, amplitudes, overlap, fourier_mask):
+    def _gradient_descent_fourier_projection(
+        self, amplitudes, overlap, fourier_mask, virtual_detector_masks
+    ):
         """
         Ptychographic fourier projection method for GD method.
 
@@ -2714,6 +3000,9 @@ class ObjectNDProbeMixedMethodsMixin:
         fourier_mask: np.ndarray
             Mask to apply at the detector-plane for zeroing-out unreliable gradients
             Useful when detector has artifacts such as dead-pixels
+        virtual_detector_masks: np.ndarray
+            List of corner-centered boolean masks for binning forward model exit waves,
+            to allow comparison with arbitrary geometry detector datasets.
 
         Returns
         --------
@@ -2737,18 +3026,50 @@ class ObjectNDProbeMixedMethodsMixin:
                 xp=xp,
             )
 
-        fourier_overlap *= fourier_mask
-        farfield_amplitudes = self._return_farfield_amplitudes(fourier_overlap)
+        if fourier_mask is not None:
+            fourier_overlap *= fourier_mask
+
+        if virtual_detector_masks is not None:
+            mask_sums = virtual_detector_masks.sum((-1, -2))
+            inverse_mask = (1 - virtual_detector_masks.sum(0)).astype(xp.bool_)
+            abs_fourier_overlap = self._return_farfield_amplitudes(fourier_overlap)
+            old_fourier_overlap_sum = xp.sum(abs_fourier_overlap**2)
+            fourier_overlap[..., inverse_mask] = 0.0
+
+            fourier_overlap_binned = xp.full_like(
+                fourier_overlap, fill_value=1e-16, dtype=xp.float32
+            )
+            for mask, mask_sum in zip(virtual_detector_masks, mask_sums):
+                val = xp.sqrt(
+                    xp.sum(abs_fourier_overlap**2 * mask, axis=(-1, -2))
+                    / mask_sum
+                    / self._num_probes
+                )
+                fourier_overlap_binned[..., mask] = val[:, None, None]
+
+            abs_fourier_overlap = self._return_farfield_amplitudes(fourier_overlap)
+            new_fourier_overlap_sum = xp.sum(abs_fourier_overlap**2)
+            fourier_overlap_binned *= xp.sqrt(
+                old_fourier_overlap_sum / new_fourier_overlap_sum
+            )
+            fourier_modified_overlap = (
+                fourier_overlap * amplitudes[:, None] / fourier_overlap_binned
+            )
+            farfield_amplitudes = self._return_farfield_amplitudes(
+                fourier_overlap_binned
+            )
+        else:
+            farfield_amplitudes = self._return_farfield_amplitudes(fourier_overlap)
+            farfield_amplitudes[farfield_amplitudes == 0.0] = np.inf
+
+            amplitude_modification = amplitudes / farfield_amplitudes
+            fourier_modified_overlap = amplitude_modification[:, None] * fourier_overlap
+
         error = xp.sum(xp.abs(amplitudes - farfield_amplitudes) ** 2)
+        fourier_modified_overlap = fourier_modified_overlap - fourier_overlap
 
-        farfield_amplitudes[farfield_amplitudes == 0.0] = np.inf
-        amplitude_modification = amplitudes / farfield_amplitudes
-
-        fourier_modified_overlap = amplitude_modification[:, None] * fourier_overlap
-
-        fourier_modified_overlap = (
-            fourier_modified_overlap - fourier_overlap
-        ) * fourier_mask
+        if fourier_mask is not None:
+            fourier_modified_overlap *= fourier_mask
 
         # resample back to region_of_interest_shape, note: this needs to happen in reciprocal-space
         if self._resample_exit_waves:
@@ -2770,6 +3091,7 @@ class ObjectNDProbeMixedMethodsMixin:
         overlap,
         exit_waves,
         fourier_mask,
+        virtual_detector_masks,
         projection_a,
         projection_b,
         projection_c,
@@ -2801,6 +3123,9 @@ class ObjectNDProbeMixedMethodsMixin:
             Mask to apply at the detector-plane for zeroing-out unreliable gradients
             Useful when detector has artifacts such as dead-pixels
             Currently not implemented for projection sets
+        virtual_detector_masks: np.ndarray
+            List of corner-centered boolean masks for binning forward model exit waves,
+            to allow comparison with arbitrary geometry detector datasets.
         projection_a: float
         projection_b: float
         projection_c: float
@@ -2814,6 +3139,9 @@ class ObjectNDProbeMixedMethodsMixin:
         """
 
         if fourier_mask is not None:
+            raise NotImplementedError()
+
+        if virtual_detector_masks is not None:
             raise NotImplementedError()
 
         xp = self._xp
@@ -3367,6 +3695,44 @@ class MultipleMeasurementsMethodsMixin:
     Overwrites various Mixins.
     """
 
+    def slim_preprocess(
+        self,
+        amplitudes,
+        probe_array,
+        object_array,
+        positions_px,
+        reciprocal_sampling=None,
+        angular_sampling=None,
+        store_initial_arrays=True,
+    ):
+        """
+        Alternative function for ptychographic preprocessing.
+        This accepts the necessary arrays, and simply sets the appropriate attributes.
+
+        Parameters
+        ----------
+        amplitudes: np.ndarray
+            Corner-centered diffraction amplitudes with dimension (N,Qx,Qy)
+        probe_array: np.ndarray
+            Corner-centered initial guess for complex-valued probe of dimensions (...,Qx,Qy)
+        object_array: np.ndarray
+            Initial guess for object of dimensions (...,Px,Py)
+        positions_px: np.ndarray
+            Initial guess for probe positions in pixels of dimensions (N,2)
+        reciprocal_sampling: (float,float), optional
+            (dk_x, dk_y) reciprocal space sampling in inverse Angstroms
+        angular_sampling: (float,float), optional
+            (dalpha_x, dalpha_y) angluar sampling in mrad
+        store_initial_arrays: bool
+            If True, preprocesed object and probe arrays are stored allowing reset=True in reconstruct.
+
+        Returns
+        --------
+        self: PtychographicReconstruction
+            Self to accommodate chaining
+        """
+        raise NotImplementedError()
+
     def _reset_reconstruction(
         self,
         store_iterations,
@@ -3408,6 +3774,14 @@ class MultipleMeasurementsMethodsMixin:
 
             # first start
             else:
+                self.error_iterations = []
+                if use_projection_scheme:
+                    self._exit_waves = [None] * len(self._probes_all)
+                else:
+                    self._exit_waves = None
+        else:
+            # reset=False first start
+            if not hasattr(self, "error"):
                 self.error_iterations = []
                 if use_projection_scheme:
                     self._exit_waves = [None] * len(self._probes_all)

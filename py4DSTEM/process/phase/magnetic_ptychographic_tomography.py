@@ -112,6 +112,9 @@ class MagneticPtychographicTomography(
     initial_scan_positions: list of np.ndarray, optional
         Probe positions in Å for each diffraction intensity per tilt
         If None, initialized to a grid scan centered along tilt axis
+    object_fov_ang: Tuple[int,int], optional
+        Fixed object field of view in Å. If None, the fov is initialized using the
+        probe positions and object_padding_px
     positions_offset_ang: list of np.ndarray, optional
         Offset of positions in A
     verbose: bool, optional
@@ -157,6 +160,7 @@ class MagneticPtychographicTomography(
         initial_object_guess: np.ndarray = None,
         initial_probe_guess: np.ndarray = None,
         initial_scan_positions: Sequence[np.ndarray] = None,
+        object_fov_ang: Tuple[float, float] = None,
         positions_offset_ang: Sequence[np.ndarray] = None,
         verbose: bool = True,
         device: str = "cpu",
@@ -209,6 +213,7 @@ class MagneticPtychographicTomography(
         self._rolloff = rolloff
         self._object_type = object_type
         self._object_padding_px = object_padding_px
+        self._object_fov_ang = object_fov_ang
         self._positions_mask = positions_mask
         self._verbose = verbose
         self._preprocessed = False
@@ -222,9 +227,11 @@ class MagneticPtychographicTomography(
         self,
         diffraction_intensities_shape: Tuple[int, int] = None,
         reshaping_method: str = "bilinear",
+        shifting_interpolation_order: int = 3,
         padded_diffraction_intensities_shape: Tuple[int, int] = None,
         region_of_interest_shape: Tuple[int, int] = None,
         dp_mask: np.ndarray = None,
+        in_place_datacube_modification: bool = False,
         fit_function: str = "plane",
         plot_probe_overlaps: bool = True,
         rotation_real_space_degrees: float = None,
@@ -239,6 +246,7 @@ class MagneticPtychographicTomography(
         force_reciprocal_sampling: float = None,
         object_fov_mask: np.ndarray = True,
         crop_patterns: bool = False,
+        store_initial_arrays: bool = True,
         device: str = None,
         clear_fft_cache: bool = None,
         max_batch_size: int = None,
@@ -257,6 +265,8 @@ class MagneticPtychographicTomography(
             If None, no resampling of diffraction intenstities is performed
         reshaping_method: str, optional
             Method to use for reshaping, either 'bin, 'bilinear', or 'fourier' (default)
+        shifting_interpolation_order: int
+            Spline interpolation order used in shifting DPs to origin. Default is bi-cubic.
         padded_diffraction_intensities_shape: (int,int), optional
             Padded diffraction intensities shape.
             If None, no padding is performed
@@ -265,6 +275,9 @@ class MagneticPtychographicTomography(
             at the diffraction plane to allow comparison with experimental data
         dp_mask: ndarray, optional
             Mask for datacube intensities (Qx,Qy)
+        in_place_datacube_modification: bool, optional
+            If True, the datacube will be preprocessed in-place. Note this is not possible
+            when either crop_patterns or positions_mask are used.
         fit_function: str, optional
             2D fitting function for CoM fitting. One of 'plane','parabola','bezier_two'
         plot_probe_overlaps: bool, optional
@@ -295,6 +308,8 @@ class MagneticPtychographicTomography(
             If None, probe_overlap intensity is thresholded
         crop_patterns: bool
             if True, crop patterns to avoid wrap around of patterns when centering
+        store_initial_arrays: bool
+            If True, preprocesed object and probe arrays are stored allowing reset=True in reconstruct.
         device: str, optional
             if not none, overwrites self._device to set device preprocess will be perfomed on.
         clear_fft_cache: bool, optional
@@ -476,12 +491,15 @@ class MagneticPtychographicTomography(
                 amplitudes,
                 mean_diffraction_intensity_temp,
                 self._crop_mask,
+                self._crop_mask_shape,
             ) = self._normalize_diffraction_intensities(
                 intensities,
                 com_fitted_x,
                 com_fitted_y,
                 self._positions_mask[index],
                 crop_patterns,
+                in_place_datacube_modification,
+                shifting_interpolation_order=shifting_interpolation_order,
             )
 
             self._mean_diffraction_intensity.append(mean_diffraction_intensity_temp)
@@ -534,8 +552,10 @@ class MagneticPtychographicTomography(
         else:
             self._object = obj
 
-        self._object_initial = self._object.copy()
-        self._object_type_initial = self._object_type
+        if store_initial_arrays:
+            self._object_initial = self._object.copy()
+            self._object_type_initial = self._object_type
+
         self._object_shape = self._object.shape[-2:]
         self._num_voxels = self._object.shape[1]
 
@@ -565,9 +585,13 @@ class MagneticPtychographicTomography(
 
         # initialize probe
         self._probes_all = []
-        self._probes_all_initial = []
-        self._probes_all_initial_aperture = []
         list_Q = isinstance(self._probe_init, (list, tuple))
+
+        if store_initial_arrays:
+            self._probes_all_initial = []
+            self._probes_all_initial_aperture = []
+        else:
+            self._probes_all_initial_aperture = [None] * self._num_measurements
 
         for index in range(self._num_measurements):
             _probe, self._semiangle_cutoff = self._initialize_probe(
@@ -579,8 +603,9 @@ class MagneticPtychographicTomography(
             )
 
             self._probes_all.append(_probe)
-            self._probes_all_initial.append(_probe.copy())
-            self._probes_all_initial_aperture.append(xp.abs(xp.fft.fft2(_probe)))
+            if store_initial_arrays:
+                self._probes_all_initial.append(_probe.copy())
+                self._probes_all_initial_aperture.append(xp.abs(xp.fft.fft2(_probe)))
 
         del self._probe_init
 
@@ -853,6 +878,8 @@ class MagneticPtychographicTomography(
         shrinkage_rad: float = 0.0,
         fix_potential_baseline: bool = True,
         detector_fourier_mask: np.ndarray = None,
+        virtual_detector_masks: Sequence[np.ndarray] = None,
+        probe_real_space_support_mask: np.ndarray = None,
         tv_denoise: bool = True,
         tv_denoise_weights=None,
         tv_denoise_inner_iter=40,
@@ -968,6 +995,11 @@ class MagneticPtychographicTomography(
         detector_fourier_mask: np.ndarray
             Corner-centered mask to multiply the detector-plane gradients with (a value of zero supresses those pixels).
             Useful when detector has artifacts such as dead-pixels. Usually binary.
+        virtual_detector_masks: np.ndarray
+            List of corner-centered boolean masks for binning forward model exit waves,
+            to allow comparison with arbitrary geometry detector datasets.
+        probe_real_space_support_mask: np.ndarray
+            Corner-centered boolean mask, outside of which the probe amplitude will be set to zero.
         store_iterations: bool, optional
             If True, reconstructed objects and probes are stored at each iteration
         progress_bar: bool, optional
@@ -1054,10 +1086,11 @@ class MagneticPtychographicTomography(
         else:
             max_batch_size = self._num_diffraction_patterns
 
-        if detector_fourier_mask is None:
-            detector_fourier_mask = xp.ones(self._amplitudes[0].shape)
-        else:
+        if detector_fourier_mask is not None:
             detector_fourier_mask = xp.asarray(detector_fourier_mask)
+
+        if virtual_detector_masks is not None:
+            virtual_detector_masks = xp.asarray(virtual_detector_masks).astype(xp.bool_)
 
         if gaussian_filter_sigma_m is None:
             gaussian_filter_sigma_m = gaussian_filter_sigma_e
@@ -1093,6 +1126,7 @@ class MagneticPtychographicTomography(
                 self._object = self._rotate_zxy_volume_util(
                     self._object,
                     rot_matrix @ old_rot_matrix.T,
+                    use_fourier_rotation=False,
                 )
                 object_V = self._object[0]
 
@@ -1166,6 +1200,7 @@ class MagneticPtychographicTomography(
                         amplitudes_device,
                         self._exit_waves,
                         detector_fourier_mask,
+                        virtual_detector_masks,
                         use_projection_scheme,
                         projection_a,
                         projection_b,
@@ -1219,6 +1254,7 @@ class MagneticPtychographicTomography(
                         collective_object[index] += self._rotate_zxy_volume(
                             object_update * weight,
                             rot_matrix.T,
+                            use_fourier_rotation=False,
                         )
                     else:
                         self._object[index] += object_update * weight
@@ -1254,6 +1290,7 @@ class MagneticPtychographicTomography(
                         fit_probe_aberrations_using_scikit_image=fit_probe_aberrations_using_scikit_image,
                         fix_probe_aperture=fix_probe_aperture and not fix_probe,
                         initial_probe_aperture=_probe_initial_aperture,
+                        probe_real_space_support_mask=probe_real_space_support_mask,
                     )
 
                     self._positions_px_all[batch_indices] = self._positions_constraints(
@@ -1291,6 +1328,7 @@ class MagneticPtychographicTomography(
                         fit_probe_aberrations_using_scikit_image=fit_probe_aberrations_using_scikit_image,
                         fix_probe_aperture=fix_probe_aperture and not fix_probe,
                         initial_probe_aperture=_probe_initial_aperture,
+                        probe_real_space_support_mask=probe_real_space_support_mask,
                         fix_positions=fix_positions,
                         fix_positions_com=fix_positions_com and not fix_positions,
                         global_affine_transformation=global_affine_transformation,
@@ -1318,7 +1356,9 @@ class MagneticPtychographicTomography(
                         tv_denoise_inner_iter=tv_denoise_inner_iter,
                     )
 
-            self._object = self._rotate_zxy_volume_util(self._object, old_rot_matrix.T)
+            self._object = self._rotate_zxy_volume_util(
+                self._object, old_rot_matrix.T, use_fourier_rotation=False
+            )
 
             # Normalize Error Over Tilts
             error /= self._num_measurements
@@ -1411,6 +1451,7 @@ class MagneticPtychographicTomography(
             ordered_obj = self._rotate_zxy_volume_vector(
                 self._object,
                 orientation_matrix,
+                use_fourier_rotation=False,
             )
 
             # V(z,x,y), Ax(z,x,y), Ay(z,x,y), Az(z,x,y)
@@ -1565,7 +1606,9 @@ class MagneticPtychographicTomography(
         """ """
         for index in range(4):
             current_object[index] = self._rotate_zxy_volume(
-                current_object[index], rot_matrix
+                current_object[index],
+                rot_matrix,
+                use_fourier_rotation=False,
             )
 
         return current_object
@@ -1610,7 +1653,9 @@ class MagneticPtychographicTomography(
 
         xp = self._xp  # switch back to device
         obj = xp.zeros_like(current_object)
-        obj[0] = self._rotate_zxy_volume(xp.asarray(current_object[0]), rot_matrix)
+        obj[0] = self._rotate_zxy_volume(
+            xp.asarray(current_object[0]), rot_matrix, use_fourier_rotation=False
+        )
 
         obj[1] = xp.asarray(Az(rotated_vecs).reshape(nz, nx, ny))
         obj[2] = xp.asarray(Ax(rotated_vecs).reshape(nz, nx, ny))

@@ -107,6 +107,9 @@ class MixedstateMultislicePtychography(
     initial_scan_positions: np.ndarray, optional
         Probe positions in Å for each diffraction intensity
         If None, initialized to a grid scan
+    object_fov_ang: Tuple[int,int], optional
+        Fixed object field of view in Å. If None, the fov is initialized using the
+        probe positions and object_padding_px
     positions_offset_ang: np.ndarray, optional
         Offset of positions in A
     theta_x: float
@@ -159,6 +162,7 @@ class MixedstateMultislicePtychography(
         initial_object_guess: np.ndarray = None,
         initial_probe_guess: np.ndarray = None,
         initial_scan_positions: np.ndarray = None,
+        object_fov_ang: Tuple[float, float] = None,
         positions_offset_ang: np.ndarray = None,
         theta_x: float = 0,
         theta_y: float = 0,
@@ -245,6 +249,7 @@ class MixedstateMultislicePtychography(
         self._object_type = object_type
         self._positions_mask = positions_mask
         self._object_padding_px = object_padding_px
+        self._object_fov_ang = object_fov_ang
         self._verbose = verbose
         self._preprocessed = False
 
@@ -259,9 +264,11 @@ class MixedstateMultislicePtychography(
         self,
         diffraction_intensities_shape: Tuple[int, int] = None,
         reshaping_method: str = "bilinear",
+        shifting_interpolation_order: int = 3,
         padded_diffraction_intensities_shape: Tuple[int, int] = None,
         region_of_interest_shape: Tuple[int, int] = None,
         dp_mask: np.ndarray = None,
+        in_place_datacube_modification: bool = False,
         fit_function: str = "plane",
         plot_center_of_mass: str = "default",
         plot_rotation: bool = True,
@@ -278,6 +285,8 @@ class MixedstateMultislicePtychography(
         force_reciprocal_sampling: float = None,
         object_fov_mask: np.ndarray = None,
         crop_patterns: bool = False,
+        center_positions_in_fov: bool = True,
+        store_initial_arrays: bool = True,
         device: str = None,
         clear_fft_cache: bool = None,
         max_batch_size: int = None,
@@ -303,6 +312,8 @@ class MixedstateMultislicePtychography(
             If None, no resampling of diffraction intenstities is performed
         reshaping_method: str, optional
             Method to use for reshaping, either 'bin, 'bilinear', or 'fourier' (default)
+        shifting_interpolation_order: int
+            Spline interpolation order used in shifting DPs to origin. Default is bi-cubic.
         padded_diffraction_intensities_shape: (int,int), optional
             Padded diffraction intensities shape.
             If None, no padding is performed
@@ -311,6 +322,9 @@ class MixedstateMultislicePtychography(
             at the diffraction plane to allow comparison with experimental data
         dp_mask: ndarray, optional
             Mask for datacube intensities (Qx,Qy)
+        in_place_datacube_modification: bool, optional
+            If True, the datacube will be preprocessed in-place. Note this is not possible
+            when either crop_patterns or positions_mask are used.
         fit_function: str, optional
             2D fitting function for CoM fitting. One of 'plane','parabola','bezier_two'
         plot_center_of_mass: str, optional
@@ -347,6 +361,10 @@ class MixedstateMultislicePtychography(
             If None, probe_overlap intensity is thresholded
         crop_patterns: bool
             if True, crop patterns to avoid wrap around of patterns when centering
+        center_positions_in_fov: bool
+            If True (default), probe positions are centered in the fov.
+        store_initial_arrays: bool
+            If True, preprocesed object and probe arrays are stored allowing reset=True in reconstruct.
         device: str, optional
             If not None, overwrites self._device to set device preprocess will be perfomed on.
         clear_fft_cache: bool, optional
@@ -475,17 +493,22 @@ class MixedstateMultislicePtychography(
             self._amplitudes,
             self._mean_diffraction_intensity,
             self._crop_mask,
+            self._crop_mask_shape,
         ) = self._normalize_diffraction_intensities(
             _intensities,
             self._com_fitted_x,
             self._com_fitted_y,
             self._positions_mask,
             crop_patterns,
+            in_place_datacube_modification,
+            shifting_interpolation_order=shifting_interpolation_order,
         )
 
         # explicitly transfer arrays to storage
+        if not in_place_datacube_modification:
+            del _intensities
+
         self._amplitudes = copy_to_device(self._amplitudes, storage)
-        del _intensities
 
         self._num_diffraction_patterns = self._amplitudes.shape[0]
         self._amplitudes_shape = np.array(self._amplitudes.shape[-2:])
@@ -516,19 +539,23 @@ class MixedstateMultislicePtychography(
             self._object_type,
         )
 
-        self._object_initial = self._object.copy()
-        self._object_type_initial = self._object_type
+        if store_initial_arrays:
+            self._object_initial = self._object.copy()
+            self._object_type_initial = self._object_type
         self._object_shape = self._object.shape[-2:]
 
-        # center probe positions
         self._positions_px = xp_storage.asarray(
             self._positions_px, dtype=xp_storage.float32
         )
         self._positions_px_initial_com = self._positions_px.mean(0)
-        self._positions_px -= (
-            self._positions_px_initial_com - xp_storage.array(self._object_shape) / 2
-        )
-        self._positions_px_initial_com = self._positions_px.mean(0)
+
+        # center probe positions
+        if center_positions_in_fov:
+            self._positions_px -= (
+                self._positions_px_initial_com
+                - xp_storage.array(self._object_shape) / 2
+            )
+            self._positions_px_initial_com = self._positions_px.mean(0)
 
         self._positions_px_initial = self._positions_px.copy()
         self._positions_initial = self._positions_px_initial.copy()
@@ -553,8 +580,11 @@ class MixedstateMultislicePtychography(
             device=self._device,
         )._evaluate_ctf()
 
-        self._probe_initial = self._probe.copy()
-        self._probe_initial_aperture = xp.abs(xp.fft.fft2(self._probe))
+        if store_initial_arrays:
+            self._probe_initial = self._probe.copy()
+            self._probe_initial_aperture = xp.abs(xp.fft.fft2(self._probe))
+        else:
+            self._probe_initial_aperture = None
 
         # precompute propagator arrays
         self._propagator_arrays = self._precompute_propagator_arrays(
@@ -740,7 +770,10 @@ class MixedstateMultislicePtychography(
         object_positivity: bool = True,
         shrinkage_rad: float = 0.0,
         fix_potential_baseline: bool = True,
+        vacuum_mask: np.ndarray = None,
         detector_fourier_mask: np.ndarray = None,
+        virtual_detector_masks: Sequence[np.ndarray] = None,
+        probe_real_space_support_mask: np.ndarray = None,
         pure_phase_object: bool = False,
         tv_denoise_chambolle: bool = True,
         tv_denoise_weight_chambolle=None,
@@ -852,9 +885,16 @@ class MixedstateMultislicePtychography(
             Phase shift in radians to be subtracted from the potential at each iteration
         fix_potential_baseline: bool
             If true, the potential mean outside the FOV is forced to zero at each iteration
+        vacuum_mask: np.ndarray
+            Boolean mask of the projected potential, to be set to unit transmission at each iteration
         detector_fourier_mask: np.ndarray
             Corner-centered mask to multiply the detector-plane gradients with (a value of zero supresses those pixels).
             Useful when detector has artifacts such as dead-pixels. Usually binary.
+        virtual_detector_masks: np.ndarray
+            List of corner-centered boolean masks for binning forward model exit waves,
+            to allow comparison with arbitrary geometry detector datasets.
+        probe_real_space_support_mask: np.ndarray
+            Corner-centered boolean mask, outside of which the probe amplitude will be set to zero.
         pure_phase_object: bool, optional
             If True, object amplitude is set to unity
         tv_denoise_chambolle: bool
@@ -949,10 +989,11 @@ class MixedstateMultislicePtychography(
         else:
             max_batch_size = self._num_diffraction_patterns
 
-        if detector_fourier_mask is None:
-            detector_fourier_mask = xp.ones(self._amplitudes[0].shape)
-        else:
+        if detector_fourier_mask is not None:
             detector_fourier_mask = xp.asarray(detector_fourier_mask)
+
+        if virtual_detector_masks is not None:
+            virtual_detector_masks = xp.asarray(virtual_detector_masks).astype(xp.bool_)
 
         # main loop
         for a0 in tqdmnd(
@@ -1001,6 +1042,7 @@ class MixedstateMultislicePtychography(
                     amplitudes_device,
                     self._exit_waves,
                     detector_fourier_mask,
+                    virtual_detector_masks,
                     use_projection_scheme,
                     projection_a,
                     projection_b,
@@ -1064,6 +1106,7 @@ class MixedstateMultislicePtychography(
                 num_probes_fit_aberrations=num_probes_fit_aberrations,
                 fix_probe_aperture=fix_probe_aperture and not fix_probe,
                 initial_probe_aperture=self._probe_initial_aperture,
+                probe_real_space_support_mask=probe_real_space_support_mask,
                 fix_positions=fix_positions,
                 fix_positions_com=fix_positions_com and not fix_positions,
                 global_affine_transformation=global_affine_transformation,
@@ -1091,6 +1134,7 @@ class MixedstateMultislicePtychography(
                     and self._object_fov_mask_inverse.sum() > 0
                     else None
                 ),
+                vacuum_mask=vacuum_mask,
                 pure_phase_object=pure_phase_object and self._object_type == "complex",
                 tv_denoise_chambolle=tv_denoise_chambolle
                 and tv_denoise_weight_chambolle is not None,
