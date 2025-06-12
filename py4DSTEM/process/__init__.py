@@ -19,3 +19,5 @@ try:
 except (ImportError, ModuleNotFoundError) as exc:
     if not is_package_lite:
         raise exc
+
+from py4DSTEM.process.utils import Cluster
