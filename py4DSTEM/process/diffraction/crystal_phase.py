@@ -966,8 +966,8 @@ class CrystalPhase:
         if total_intensity_normalize:
             sub = self.int_total > 0.0
             for a0 in range(self.num_fits):
-                phase_weights[:, :, a0][sub] /= (self.int_total[sub]+1e-12)
-            phase_residuals[sub] /= (self.int_total[sub]+1e-12)
+                phase_weights[:, :, a0][sub] /= self.int_total[sub] + 1e-12
+            phase_residuals[sub] /= self.int_total[sub] + 1e-12
 
         # intensity range for plotting
         if weight_normalize:
@@ -1112,7 +1112,7 @@ class CrystalPhase:
         if total_intensity_normalize:
             sub = self.int_total > 0.0
             for a0 in range(self.num_fits):
-                phase_weights[:, :, a0][sub] /= (self.int_total[sub]+1e-12)
+                phase_weights[:, :, a0][sub] /= self.int_total[sub] + 1e-12
 
         # intensity range for plotting
         if weight_normalize:
@@ -1276,7 +1276,6 @@ class CrystalPhase:
 
         """
 
-
         if phase_colors is None:
             phase_colors = np.array(
                 [
@@ -1327,34 +1326,36 @@ class CrystalPhase:
             sub = phase_sig[a0] > phase_corr
             phase_map[sub] = a0
             phase_corr[sub] = phase_sig[a0][sub]
-        self.phase_corr_total = np.sum(phase_corr,axis=0)
+        self.phase_corr_total = np.sum(phase_corr, axis=0)
 
-        phase_scale = np.ones((
-            self.phase_sig.shape[1],
-            self.phase_sig.shape[2],
-        ))
+        phase_scale = np.ones(
+            (
+                self.phase_sig.shape[1],
+                self.phase_sig.shape[2],
+            )
+        )
         # if self.single_phase:
-            # if reliability_range is not None:
-            #     phase_scale *= np.clip(
-            #         (self.phase_reliability - reliability_range[0])
-            #         / (reliability_range[1] - reliability_range[0]),
-            #         0,
-            #         1,
-            #     )
-            # if correlation_range is not None:
-            #     phase_scale *= np.clip(
-            #         (self.phase_corr_total - correlation_range[0])
-            #         / (correlation_range[1] - correlation_range[0]),
-            #         0,
-            #         1,
-            #     )
-            
-            # phase_scale = np.clip(
-            #     (self.phase_reliability - reliability_range[0])
-            #     / (reliability_range[1] - reliability_range[0]),
-            #     0,
-            #     1,
-            # )
+        # if reliability_range is not None:
+        #     phase_scale *= np.clip(
+        #         (self.phase_reliability - reliability_range[0])
+        #         / (reliability_range[1] - reliability_range[0]),
+        #         0,
+        #         1,
+        #     )
+        # if correlation_range is not None:
+        #     phase_scale *= np.clip(
+        #         (self.phase_corr_total - correlation_range[0])
+        #         / (correlation_range[1] - correlation_range[0]),
+        #         0,
+        #         1,
+        #     )
+
+        # phase_scale = np.clip(
+        #     (self.phase_reliability - reliability_range[0])
+        #     / (reliability_range[1] - reliability_range[0]),
+        #     0,
+        #     1,
+        # )
 
         # else:
         if not self.single_phase:
@@ -1371,7 +1372,7 @@ class CrystalPhase:
 
             # normalize the reliability by the intensity of each experimental pattern
             if normalize_exp_intensity:
-                phase_rel /= (self.int_total+1e-12)
+                phase_rel /= self.int_total + 1e-12
 
             # phase_scale = np.clip(
             #     (phase_rel - reliability_range[0])
