@@ -335,7 +335,8 @@ def orientation_plan(
     )
     self.orientation_zone_axis_steps = (
         np.round(step / self.orientation_refine_ratio) * self.orientation_refine_ratio
-    ).astype(np.integer)
+    ).astype(np.int32)
+    # ).astype(np.integer)
 
     if self.orientation_fiber and self.orientation_fiber_angles[0] == 0:
         self.orientation_num_zones = int(1)
@@ -370,7 +371,8 @@ def orientation_plan(
             (self.orientation_zone_axis_steps + 1)
             * (self.orientation_zone_axis_steps + 2)
             / 2
-        ).astype(np.integer)
+        ).astype(np.int32)
+        # ).astype(np.integer)
         self.orientation_vecs = np.zeros((self.orientation_num_zones, 3))
         self.orientation_vecs[0, :] = self.orientation_zone_axis_range[0, :]
         self.orientation_inds = np.zeros((self.orientation_num_zones, 3), dtype="int")
@@ -379,7 +381,8 @@ def orientation_plan(
         # or circular arc SLERP for fiber texture
         for a0 in np.arange(1, self.orientation_zone_axis_steps + 1):
             inds = np.arange(a0 * (a0 + 1) / 2, a0 * (a0 + 1) / 2 + a0 + 1).astype(
-                np.integer
+                np.int32
+                # np.integer
             )
 
             p0 = pv[a0, :]
@@ -617,7 +620,8 @@ def orientation_plan(
 
     # Solve for number of angular steps along in-plane rotation direction
     self.orientation_in_plane_steps = np.round(360 / angle_step_in_plane).astype(
-        np.integer
+        np.int32
+        # np.integer
     )
 
     # Calculate -z angles (Euler angle 3)
