@@ -550,16 +550,8 @@ def DDF_radial_image(points_array_w_rphi, radius, Rshape, tol=1):
 
     radialimage = np.zeros(shape=Rshape)
 
-    for i in range(Rshape[0]):
-        for j in range(Rshape[1]):
-            radialimage[i, j] = np.where(
-                np.logical_and(
-                    radial_filtered_points_array[:, 3] == i,
-                    radial_filtered_points_array[:, 4] == j,
-                ),
-                radial_filtered_points_array[:, 2],
-                0,
-            ).sum()
+    for line in radial_filtered_points_array:
+        radialimage[int(line[3]), int(line[4])] += line[2]
 
     return radialimage
 
@@ -612,14 +604,7 @@ def DDFradialazimuthimage(points_array_w_rphi, radius, phi0, phi1, Rshape, tol=1
     )
     radiusazimuthimage = np.zeros(shape=Rshape)
 
-    for i in range(Rshape[0]):
-        for j in range(Rshape[1]):
-            radiusazimuthimage[i, j] = np.where(
-                np.logical_and(
-                    rphi_filtered_points_array[:, 3] == i,
-                    rphi_filtered_points_array[:, 4] == j,
-                ),
-                rphi_filtered_points_array[:, 2],
-                0,
-            ).sum()
+    for line in rphi_filtered_points_array:
+        radiusazimuthimage[int(line[3]), int(line[4])] += line[2]
+
     return radiusazimuthimage
