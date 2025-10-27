@@ -267,8 +267,8 @@ def show(
                 * 'centered': The vmin/vmax values are set to ``c -/+ m``, where by default
                   'c' is zero and m is the max(abs(ar-c), or the two params can be user
                   specified using the kwargs vmin/vmax -> c/m.
-        vmin (number): min intensity, behavior depends on clipvals
-        vmax (number): max intensity, behavior depends on clipvals
+        vmin (number): min intensity, behavior depends on intensity_range
+        vmax (number): max intensity, behavior depends on intensity_range
         min,max: alias' for vmin,vmax, throws deprecation warning
         power (number): specifies the scaling power
         power_offset (bool): If true, image has min value subtracted before power scaling
