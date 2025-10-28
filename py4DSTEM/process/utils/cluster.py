@@ -162,7 +162,8 @@ class Cluster:
         sim_averaged = np.mean(self.similarity, axis=2)
 
         # Assigning the background as 'counted'
-        sim_averaged[~self.r_space_mask] = -1.0
+        if self.r_space_mask.dtype == bool:
+            sim_averaged[~self.r_space_mask] = -1.0
 
         # color the pixels with the cluster index
         self.cluster_map = -1 * np.ones(
