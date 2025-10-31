@@ -56,9 +56,6 @@ class Cluster:
         similarity: np.ndarray
             similarity scores for each pixel
         """
-        if self.r_space_mask is None:
-            self.set_mask(r_space_mask)
-
         # List of neighbors to search
         # (-1,-1) will be equivalent to (1,1)
         self.dxy = np.array(
@@ -162,7 +159,7 @@ class Cluster:
         sim_averaged = np.mean(self.similarity, axis=2)
 
         # Assigning the background as 'counted'
-        if self.r_space_mask.dtype == bool:
+        if self.r_space_mask is not None:
             sim_averaged[~self.r_space_mask] = -1.0
 
         # color the pixels with the cluster index
