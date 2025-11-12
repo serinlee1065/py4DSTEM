@@ -481,6 +481,36 @@ def DDFimage(points_array, aperture_positions, Rshape=None, tol=1):
     return image
 
 
+def filter_by_position(pointsarray, Rx, Ry, intensity=False):
+    """
+    Filters a pointsarray to just give the rows (i.e. diffraction spot parameters) corresponding to the Rx and Ry positions given
+
+    Parameters
+    ----------
+    pointsarray: numpy array
+        as produced by pointlist_to_array
+    Rx, Ry: int
+        integers for the selected pixels
+    intensity: bool
+        whether to report intensity too
+    Returns
+    ----------
+    positionfilteredarray: numpy array
+         This will be an 2D numpy array of n points x 2 or 3 columns:
+            qx
+            qy
+            I (if intensity == True)
+
+    """
+    positionfilteredarray = pointsarray[
+        np.where(np.logical_and(pointsarray[:, 3] == Rx, pointsarray[:, 4] == Ry))
+    ]
+    if intensity:
+        return positionfilteredarray[:, :3]
+    else:
+        return positionfilteredarray[:, :2]
+
+
 def radial_filtered_array(points_array_w_rphi, radius, tol=1):
     """
     Calculates a Filtered points array from a list of detected diffraction peak positions in a points_array
