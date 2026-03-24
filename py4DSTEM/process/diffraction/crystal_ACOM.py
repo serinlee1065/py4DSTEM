@@ -2336,7 +2336,10 @@ def calculate_strain(
                 # Get all paired peaks
                 qxy = np.vstack((p.data["qx"][keep], p.data["qy"][keep])).T
                 qxy_ref = np.vstack(
-                    (p_ref.data["qx"][inds_match[keep]], p_ref.data["qy"][inds_match[keep]])
+                    (
+                        p_ref.data["qx"][inds_match[keep]],
+                        p_ref.data["qy"][inds_match[keep]],
+                    )
                 ).T
 
                 # Fit transformation matrix
