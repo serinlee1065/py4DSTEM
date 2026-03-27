@@ -2,6 +2,9 @@
 A general note on all these functions is that they are designed for use with rotation calibration into the pointslist.
 However, they have to date only been used with the Qx and Qy in pixels and not calibrated into reciprocal units.
 There is no reason why this should not work, but the default tolerance would need adjustment.
+
+These majority of these functions have been used and described in https://doi.org/10.1093/mam/ozae104,
+with the exception of the ones written in polar co-ordinates (which are still to be used in published work).
 """
 
 import numpy as np
@@ -423,30 +426,6 @@ def pointlist_to_array(
     return points_array
 
 
-def pointlist_differences(aperture_position, points_array):
-    """
-    calculates Euclidean distances between a specific aperture position
-    and a whole list of detected points for a dataset
-
-    Parameters
-    ----------
-    aperture_position: tuple
-        2-element vector of the diffraction space shape of a position of an aperture
-    points_array: numpy array
-        as produced by pointlist_to_array and defined in docstring for that function
-
-    Returns
-    ----------
-    diff: numpy array
-        the Euclidean distances as a 1D numpy array
-    """
-    subtractor = np.array(
-        [[aperture_position[0], aperture_position[1]] * points_array.shape[0]]
-    ).reshape((points_array.shape[0], 2))
-    diff = ((points_array[:, :2] - subtractor) ** 2).sum(axis=1) ** 0.5
-    return diff
-
-
 def DDFimage(points_array, aperture_positions, Rshape=None, tol=1):
     """
     Calculates a Digital Dark Field image from a list of detected diffraction peak positions in a points_array and a list of aperture_positions, within a defined matching tolerance
@@ -478,20 +457,58 @@ def DDFimage(points_array, aperture_positions, Rshape=None, tol=1):
         )
 
     image = np.zeros(Rshape)
+
     for aperture_index in tqdmnd(len(aperture_positions)):
+        # Pick one of the aperture positions
         aperture_position = aperture_positions[aperture_index]
-        intensities = np.vstack(
+        # Calculate vector differences
+        differences = points_array[:, :2] - aperture_position
+        # Calculate normalised distances
+        diffnorm = (differences**2).sum(axis=1) ** 0.5
+        # Append these norms to the ends of each row for each spot
+        intensities = np.hstack(
             (
-                points_array[:, 2:5].T,
-                pointlist_differences(aperture_position, points_array),
+                points_array[:, 2:5],
+                diffnorm[:, np.newaxis],
             )
-        ).T
+        )
+        # Delete all spots for which the norm is larger than tolerance
         intensities2 = np.delete(intensities, np.where(intensities[:, 3] > tol), axis=0)
-        for row in range(intensities2[:, 0].shape[0]):
-            image[
-                intensities2[row, 1].astype(int), intensities2[row, 2].astype(int)
-            ] += intensities2[row, 0]
+        # Update the image with the remaining intensities sliced by the Rx and Ry positions
+        image[
+            intensities2[:, 1].astype(int), intensities2[:, 2].astype(int)
+        ] += intensities2[:, 0]
     return image
+
+
+def filter_by_position(pointsarray, Rx, Ry, intensity=False):
+    """
+    Filters a pointsarray to just give the rows (i.e. diffraction spot parameters) corresponding to the Rx and Ry positions given
+
+    Parameters
+    ----------
+    pointsarray: numpy array
+        as produced by pointlist_to_array
+    Rx, Ry: int
+        integers for the selected pixels
+    intensity: bool
+        whether to report intensity too
+    Returns
+    ----------
+    positionfilteredarray: numpy array
+         This will be an 2D numpy array of n points x 2 or 3 columns:
+            qx
+            qy
+            I (if intensity == True)
+
+    """
+    positionfilteredarray = pointsarray[
+        np.where(np.logical_and(pointsarray[:, 3] == Rx, pointsarray[:, 4] == Ry))
+    ]
+    if intensity:
+        return positionfilteredarray[:, :3]
+    else:
+        return positionfilteredarray[:, :2]
 
 
 def radial_filtered_array(points_array_w_rphi, radius, tol=1):
@@ -563,16 +580,8 @@ def DDF_radial_image(points_array_w_rphi, radius, Rshape, tol=1):
 
     radialimage = np.zeros(shape=Rshape)
 
-    for i in range(Rshape[0]):
-        for j in range(Rshape[1]):
-            radialimage[i, j] = np.where(
-                np.logical_and(
-                    radial_filtered_points_array[:, 3] == i,
-                    radial_filtered_points_array[:, 4] == j,
-                ),
-                radial_filtered_points_array[:, 2],
-                0,
-            ).sum()
+    for line in radial_filtered_points_array:
+        radialimage[int(line[3]), int(line[4])] += line[2]
 
     return radialimage
 
@@ -625,14 +634,7 @@ def DDFradialazimuthimage(points_array_w_rphi, radius, phi0, phi1, Rshape, tol=1
     )
     radiusazimuthimage = np.zeros(shape=Rshape)
 
-    for i in range(Rshape[0]):
-        for j in range(Rshape[1]):
-            radiusazimuthimage[i, j] = np.where(
-                np.logical_and(
-                    rphi_filtered_points_array[:, 3] == i,
-                    rphi_filtered_points_array[:, 4] == j,
-                ),
-                rphi_filtered_points_array[:, 2],
-                0,
-            ).sum()
+    for line in rphi_filtered_points_array:
+        radiusazimuthimage[int(line[3]), int(line[4])] += line[2]
+
     return radiusazimuthimage
